@@ -40,7 +40,7 @@ public class WikiConsumer implements Runnable {
                 if(document!=null)
                     crawler.unlink(document.getWikiLink());
 
-                e.printStackTrace();
+                System.out.println("Invalid Page '"+document.getWikiLink()+"' Reason: "+e.getMessage());
             }
         }
     }

@@ -33,6 +33,11 @@ public class WikiProducer implements Runnable {
         if(wikipedia.hasPage(link))
             return;
 
+        if(link.isMainPage()) {
+            crawler.unlink(link);
+            return;
+        }
+
         WebDocument fetched = fetcher.fetch(link.getLink());
         if(fetched == null) {
             crawler.unlink(link);

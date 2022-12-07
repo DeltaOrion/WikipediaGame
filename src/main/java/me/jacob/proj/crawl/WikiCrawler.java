@@ -5,7 +5,6 @@ import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.model.Wikipedia;
 
 import java.net.MalformedURLException;
-import java.net.SocketImpl;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -32,7 +31,7 @@ public class WikiCrawler {
     public static void main(String[] args) throws MalformedURLException {
         Wikipedia wikipedia = new Wikipedia();
         WikiCrawler crawler = new WikiCrawler(wikipedia, 1, 1);
-        crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Black_hole")));
+        crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Wikipedia_Red_Link")));
     }
 
 

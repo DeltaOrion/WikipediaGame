@@ -4,11 +4,8 @@ import me.jacob.proj.crawl.MalformedPageException;
 import me.jacob.proj.crawl.WebDocument;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
-import org.jsoup.nodes.Document;
 
-import java.net.URL;
 import java.util.Collection;
-import java.util.List;
 
 public interface DocumentAnalyzer {
 

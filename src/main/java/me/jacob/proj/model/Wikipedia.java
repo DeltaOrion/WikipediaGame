@@ -44,6 +44,9 @@ public class Wikipedia {
         WikiPage A = pages.get(a);
         WikiPage B = pages.get(b);
 
+        if(A == null || B == null)
+            return new ArrayList<>();
+
         List<List<WikiPage>> result = new ArrayList<>();
         List<WikiPage> currPath = new ArrayList<>();
         currPath.add(B);

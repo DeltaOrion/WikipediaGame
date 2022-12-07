@@ -15,6 +15,7 @@ public class WikiPage {
     private String description;
     private final WikiLink link;
     private final List<WikiPage> neighbours;
+    private boolean isRedirect;
 
     //path data
     private final List<List<WikiPage>> allPairShortest;
@@ -62,5 +63,13 @@ public class WikiPage {
 
     public String toString() {
         return title + " "+uniqueId;
+    }
+
+    public boolean isRedirect() {
+        return isRedirect;
+    }
+
+    public void setRedirect(boolean redirect) {
+        isRedirect = redirect;
     }
 }

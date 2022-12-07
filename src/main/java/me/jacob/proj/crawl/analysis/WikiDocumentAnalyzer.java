@@ -4,9 +4,7 @@ import me.jacob.proj.crawl.MalformedPageException;
 import me.jacob.proj.crawl.WebDocument;
 import me.jacob.proj.crawl.fetch.DocumentFetcher;
 import me.jacob.proj.crawl.fetch.TestDocumentFetcher;
-import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
-import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
@@ -14,53 +12,28 @@ import org.jsoup.nodes.TextNode;
 import org.jsoup.select.Elements;
 
 import java.net.MalformedURLException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URL;
-import java.util.*;
 import java.util.regex.Pattern;
 
-public class WikiDocumentAnalyzer implements DocumentAnalyzer {
+public class WikiDocumentAnalyzer extends AbstractDocumentAnalyzer {
 
-    private WebDocument document;
-    private final Set<WikiLink> linksFound;
     private WikiPage analyzed;
-    private boolean realPage;
 
     private final static String MAIN_CONTENT = "mw-content-text";
-    private final static String TITLE = "mw-page-title-main";
     private final static String LANG_ELE = "p-lang";
 
-    private final static Pattern DOT_PATTERN = Pattern.compile("\\.");
-    private final static Pattern FILE_PATTERN = Pattern.compile("File:");
+    private final static String REDIRECT_ELE = "redirectsub";
+
+    private final static Pattern COMMA_PATTERN = Pattern.compile(",\\s*");
 
     public static void main(String[] args) throws MalformedURLException, MalformedPageException {
         DocumentFetcher fetcher = new TestDocumentFetcher();
-        WebDocument doc = fetcher.fetch(new URL("https://en.wikipedia.org/wiki/Boundary_(topology)"));
+        WebDocument doc = fetcher.fetch(new URL("https://en.wikipedia.org/wiki/Main_Page"));
         DocumentAnalyzer analyzer = new WikiDocumentAnalyzer();
         analyzer.setDocument(doc);
         analyzer.analyze();
     }
 
-    public WikiDocumentAnalyzer() {
-        document = null;
-        linksFound = new HashSet<>();
-    }
-
-    @Override
-    public void setDocument(WebDocument document) {
-        this.document = document;
-    }
-
-    @Override
-    public WebDocument getDocument() {
-        return document;
-    }
-
-    @Override
-    public Set<WikiLink> getLinks() {
-        return Collections.unmodifiableSet(linksFound);
-    }
 
     @Override
     public WikiPage getPage() {
@@ -69,14 +42,36 @@ public class WikiDocumentAnalyzer implements DocumentAnalyzer {
 
     @Override
     public void analyze() throws MalformedPageException {
-        Document html = document.getDocument();
+        Document html = getDocument().getDocument();
+        /*
+         * Handle
+         *   - Disambiguation
+         */
         if(html==null)
             throw new MalformedPageException("no page for link");
+
+        if(isRedLink(html)) {
+            throw new MalformedPageException("Red Link");
+        }
+
+        if(isMainPage(html))
+            throw new MalformedPageException("Main Page");
+
+
+        if(isRedirect(html)) {
+            handleRedirect();
+            return;
+        }
+
+        if(isDisambiguation(html)) {
+            handleDisambiguation();
+            return;
+        }
 
         Element body = html.body();
         String title = getTitle(body);
 
-        WikiPage page = new WikiPage(title, document.getWikiLink());
+        WikiPage page = new WikiPage(title, getDocument().getWikiLink());
 
         Element langs = body.getElementById(LANG_ELE);
         harvestLangs(page,langs);
@@ -96,63 +91,54 @@ public class WikiDocumentAnalyzer implements DocumentAnalyzer {
         analyzed = page;
     }
 
-    private void harvestLangs(WikiPage page, Element langs) throws MalformedPageException {
-        for(Element element : langs.getElementsByTag("li")) {
-            Elements a = element.getElementsByTag("a");
-            Element first = a.first();
-            String href = first.attr("href");
-            try {
-                URL url = new URL(href);
-                addLang(page,url);
-            } catch (MalformedURLException e) {
-                throw new MalformedPageException(e);
-            }
-        }
+    private boolean isDisambiguation(Document html) {
+        return false;
     }
 
-    private void addLang(WikiPage page, URL url) {
-        String path = url.getPath();
-        String auth = url.getAuthority();
-        Locale lang = new Locale(DOT_PATTERN.split(auth)[0]);
-        page.getLink().addSupportedLang(lang,path);
+    private void handleDisambiguation() {
+
     }
 
-    private void harvestLinks(Element mainContent) {
-        Elements links = mainContent.getElementsByTag("a");
-        List<String> found = new ArrayList<>();
+    private boolean isMainPage(Document html) {
+        Element head = html.head();
+        Elements links = head.getElementsByTag("link");
         for(Element link : links) {
-            String url = link.attr("href");
-            if(!url.equals(""))
-                found.add(url);
-        }
-
-        sortURIS(found);
-    }
-
-    private void sortURIS(List<String> hrefs) {
-        for(String href : hrefs) {
-            try {
-                URI uri = new URI(href);
-                analyzeURI(uri);
-            } catch (URISyntaxException ignored) {
-
+            if(link.attr("rel").equals("canonical")) {
+                String href = link.attr("href");
+                if(href.equals("https://en.wikipedia.org/wiki/Main_Page"))
+                    return true;
             }
         }
+        return false;
     }
 
-    private void analyzeURI(URI uri) {
-        //we only care about internal links!
-        if(uri.getAuthority()!=null)
-            return;
+    private void handleRedirect() throws MalformedPageException {
+        DocumentAnalyzer redirectAnalyzer = new RedirectDocumentAnalyzer();
+        redirectAnalyzer.setDocument(getDocument());
+        redirectAnalyzer.analyze();
+        analyzed = redirectAnalyzer.getPage();
+        getLinkList().addAll(redirectAnalyzer.getLinks());
+        return;
+    }
 
-        String path = uri.getRawPath();
-        if(path.isEmpty())
-            return;
+    private boolean isRedirect(Document html) {
+        Element redirect = html.getElementById(REDIRECT_ELE);
+        return redirect!=null;
+    }
 
-        if(FILE_PATTERN.matcher(path).find())
-            return;
-
-        linksFound.add(new WikiLink(path));
+    private boolean isRedLink(Document html) {
+        Element head = html.head();
+        Elements meta = head.getElementsByTag("meta");
+        for(Element element : meta) {
+            if(element.attr("name").equals("robots")) {
+                String content = element.attr("content");
+                for(String tag : COMMA_PATTERN.split(content)) {
+                    if (tag.equals("noindex") || tag.equals("nofollow"))
+                        return true;
+                }
+            }
+        }
+        return false;
     }
 
     private String getDescription(Element content) {
@@ -185,14 +171,5 @@ public class WikiDocumentAnalyzer implements DocumentAnalyzer {
                 convert((Element) node,builder);
             }
         }
-    }
-
-
-    private String getTitle(Element body) throws MalformedPageException {
-        Elements title = body.getElementsByClass(TITLE);
-        if(title.size() != 1)
-            throw new MalformedPageException("Multiple wiki titles");
-
-        return title.html();
     }
 }
