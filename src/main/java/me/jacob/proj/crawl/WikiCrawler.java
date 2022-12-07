@@ -1,14 +1,14 @@
 package me.jacob.proj.crawl;
 
 import me.jacob.proj.crawl.fetch.FetcherType;
-import me.jacob.proj.model.WikiLink;
-import me.jacob.proj.model.WikiPage;
-import me.jacob.proj.model.Wikipedia;
+import me.jacob.proj.model.*;
 import me.jacob.proj.util.Poisonable;
 
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.*;
 
 public class WikiCrawler {
@@ -17,9 +17,8 @@ public class WikiCrawler {
     private final BlockingQueue<Poisonable<WebDocument>> fetched;
     private final Wikipedia wikipedia;
 
-    private final Set<WikiLink> currentlyProcessed;
-
-    private final Map<WikiLink, List<WikiPage>> unconnectedEdges;
+    //improve processed repository logic.
+    private final LinkRepository repository;
     private int size = 0;
 
     private final int producers;
@@ -32,24 +31,25 @@ public class WikiCrawler {
 
     public static void main(String[] args) throws MalformedURLException, InterruptedException {
         Wikipedia wikipedia = new Wikipedia();
-        WikiCrawler crawler = new WikiCrawler(wikipedia, 2, 5,20);
+        LinkRepository repository = new LinkRepository();
+        WikiCrawler crawler = new WikiCrawler(wikipedia, repository, 3, 5, 200);
         crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Black_hole")));
     }
 
 
-    public WikiCrawler(Wikipedia wikipedia, int producers, int consumers, int earlystop) {
+    public WikiCrawler(Wikipedia wikipedia, LinkRepository repository, int producers, int consumers, int earlystop) {
         this.wikipedia = wikipedia;
+        this.repository = repository;
+
         this.urls = new LinkedBlockingDeque<>();
         this.fetched = new ArrayBlockingQueue<>(1000);
-        this.unconnectedEdges = new HashMap<>();
 
         this.producers = producers;
         this.consumers = consumers;
 
         this.executors = Executors.newFixedThreadPool(producers + consumers);
-        this.currentlyProcessed = new HashSet<>();
-
         this.earlyStop = earlystop;
+
         indexed = 0;
     }
 
@@ -78,17 +78,19 @@ public class WikiCrawler {
     }
 
     public synchronized void unlink(WikiLink link) {
-        //for whatever reason the link couldn't be fetched (malformed or non-existant).
-        unconnectedEdges.remove(link);
+        //for whatever reason the link couldn't be fetched (malformed or non-existent).
+        repository.deregister(link);
         size--;
-        if (size == 0)
-            terminate();
+        if (size == 0) {
+            System.out.println("Shutting down - no more pages");
+            shutdown();
+        }
     }
 
-    private void terminate() {
-
+    public void shutdown() {
+        System.out.println("Shutting down");
         executors.shutdown();
-        shutdown();
+        stopWorkers();
 
         for (WikiPage page : wikipedia.getPages()) {
             System.out.println(page.getTitle() + " " + page.getUniqueId());
@@ -105,16 +107,18 @@ public class WikiCrawler {
         }
     }
 
-    private void shutdown() {
-        for(int i=0;i<consumers;i++)
+    private void stopWorkers() {
+        for (int i = 0; i < consumers; i++)
             fetched.add(Poisonable.poison());
 
-        for(int i=0;i<producers;i++)
+        for (int i = 0; i < producers; i++)
             urls.push(Poisonable.poison());
     }
 
     public void link(WikiPage page, Collection<WikiLink> links) throws InterruptedException {
         wikipedia.addPage(page);
+        CrawlableLink pageRegLink = repository.getOrMake(page.getLink());
+        pageRegLink.setProcessed();
 
         List<WikiLink> unindexed = new ArrayList<>();
         for (WikiLink link : links) {
@@ -129,19 +133,17 @@ public class WikiCrawler {
             }
         }
 
-        synchronized (this) {
-            for(WikiLink link : unindexed) {
-                List<WikiPage> unconnected = unconnectedEdges.computeIfAbsent(link, k -> new ArrayList<>());
-                unconnected.add(page);
-                addLink(link);
-            }
+        for (WikiLink link : unindexed) {
+            CrawlableLink registered = repository.getOrMake(link);
+            registered.addUnconnected(page);
+            addLink(registered);
         }
 
         //the unconnected link to this page. Add the links!
-        List<WikiPage> unconnected = null;
+        Collection<WikiPage> unconnected = null;
         synchronized (this) {
-            unconnected = unconnectedEdges.get(page.getLink());
-            unconnectedEdges.remove(page.getLink());
+            unconnected = pageRegLink.getUnconnected();
+            pageRegLink.unlink();
         }
 
         if (unconnected != null) {
@@ -155,26 +157,27 @@ public class WikiCrawler {
             indexed++;
 
             if (size == 0) {
-                terminate();
+                System.out.println("Shutting down - out of docs to consume");
+                shutdown();
                 return;
             }
 
-            if(indexed >= earlyStop) {
-                terminate();
-                return;
+            if (indexed >= earlyStop) {
+                System.out.println("Shutting down - max pages indexed");
+                shutdown();
             }
         }
     }
 
-    private void addLink(WikiLink link) throws InterruptedException {
-        synchronized (this) {
-            if (currentlyProcessed.contains(link))
-                return;
+    //adds an indexed link
+    private synchronized void addLink(CrawlableLink link) throws InterruptedException {
+        if (!repository.shouldBeCrawled(link))
+            return;
 
-            currentlyProcessed.add(link);
-            size++;
-        }
-        putLink(link);
+        link.setRegistered(true);
+        size++;
+
+        putLink(link.getLink());
     }
 
     private void putLink(WikiLink link) throws InterruptedException {

@@ -1,6 +1,7 @@
 package me.jacob.proj.crawl;
 
 import me.jacob.proj.crawl.analysis.DocumentAnalyzer;
+import me.jacob.proj.crawl.analysis.TestAnalyzer;
 import me.jacob.proj.crawl.analysis.WikiDocumentAnalyzer;
 import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.model.Wikipedia;
