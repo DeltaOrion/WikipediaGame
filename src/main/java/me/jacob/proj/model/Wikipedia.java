@@ -1,8 +1,11 @@
 package me.jacob.proj.model;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Wikipedia {
+
+    private final static AtomicInteger PAGE_COUNT = new AtomicInteger(0);
 
     private final Map<String,WikiPage> pages;
     private final Map<WikiLink,WikiPage> links;
@@ -81,8 +84,10 @@ public class Wikipedia {
     }
 
     public synchronized void addPage(WikiPage page) {
+        int nextPage = PAGE_COUNT.getAndIncrement();
         this.pages.put(page.getTitle(),page);
         this.links.put(page.getLink(),page);
+        page.setUniqueId(nextPage);
     }
 
     public synchronized WikiPage getPage(String title) {

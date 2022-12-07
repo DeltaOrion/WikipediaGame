@@ -7,21 +7,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class WikiPage {
 
-    private final static AtomicInteger PAGE_COUNT = new AtomicInteger(0);
-
     //node data
-    private final int uniqueId;
+    private int uniqueId;
     private final String title;
     private String description;
     private final WikiLink link;
     private final List<WikiPage> neighbours;
+
     private boolean isRedirect;
+    private String articleType;
 
     //path data
     private final List<List<WikiPage>> allPairShortest;
 
     public WikiPage(String title, WikiLink link) {
-        this.uniqueId = PAGE_COUNT.getAndIncrement();
         this.link = link;
         this.neighbours = new ArrayList<>();
         this.title = title;
@@ -61,6 +60,10 @@ public class WikiPage {
         return uniqueId;
     }
 
+    public void setUniqueId(int uniqueId) {
+        this.uniqueId = uniqueId;
+    }
+
     public String toString() {
         return title + " "+uniqueId;
     }
@@ -71,5 +74,13 @@ public class WikiPage {
 
     public void setRedirect(boolean redirect) {
         isRedirect = redirect;
+    }
+
+    public String getArticleType() {
+        return articleType;
+    }
+
+    public void setArticleType(String articleType) {
+        this.articleType = articleType;
     }
 }

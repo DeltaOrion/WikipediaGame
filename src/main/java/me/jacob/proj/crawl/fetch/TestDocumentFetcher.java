@@ -22,8 +22,6 @@ public class TestDocumentFetcher implements DocumentFetcher {
             return null;
         }
 
-        System.out.println("Fetched "+url);
-
         try {
             return new WebDocument(new WikiLink(url),Jsoup.parse(file));
         } catch (IOException e) {

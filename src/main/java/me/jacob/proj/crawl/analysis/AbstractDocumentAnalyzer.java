@@ -18,14 +18,17 @@ import java.util.regex.Pattern;
 public abstract class AbstractDocumentAnalyzer implements DocumentAnalyzer {
 
     private WebDocument document;
-    private final List<WikiLink> linksFound;
+    private final Set<WikiLink> linksFound;
     private final static Pattern DOT_PATTERN = Pattern.compile("\\.");
     private final static Pattern FILE_PATTERN = Pattern.compile("File:");
+    private final static Pattern COLON_PATTERN = Pattern.compile(":");
 
     private final static String TITLE = "mw-page-title-main";
+    private final static String TITLE2 = "firstHeading";
+    private final static String DISAMBIG = "dmbox-body";
 
     protected AbstractDocumentAnalyzer() {
-        this.linksFound = new ArrayList<>();
+        this.linksFound = new HashSet<>();
     }
 
     @Override
@@ -41,11 +44,22 @@ public abstract class AbstractDocumentAnalyzer implements DocumentAnalyzer {
 
     @Override
     public Collection<WikiLink> getLinks() {
-        return Collections.unmodifiableList(linksFound);
+        return Collections.unmodifiableSet(linksFound);
     }
 
-    protected List<WikiLink> getLinkList() {
+    protected Set<WikiLink> getLinkSet() {
         return linksFound;
+    }
+
+    protected String getDocumentType(WikiLink link, Document document) {
+        if (document.getElementsByClass(DISAMBIG).size() > 0)
+            return "Disambiguation";
+
+        String[] split = COLON_PATTERN.split(link.getRelative());
+        if(split.length==2)
+            return split[0];
+
+        return null;
     }
 
     protected void harvestLangs(WikiPage page, Element langs) throws MalformedPageException {
@@ -98,7 +112,7 @@ public abstract class AbstractDocumentAnalyzer implements DocumentAnalyzer {
             return;
 
         String path = uri.getRawPath();
-        if(path.isEmpty())
+        if(path == null || path.isEmpty())
             return;
 
         if(FILE_PATTERN.matcher(path).find())
@@ -108,10 +122,18 @@ public abstract class AbstractDocumentAnalyzer implements DocumentAnalyzer {
     }
 
     protected String getTitle(Element body) throws MalformedPageException {
-        Elements title = body.getElementsByClass(TITLE);
-        if(title.size() != 1)
-            throw new MalformedPageException("Multiple wiki titles");
+        Elements titleChoices = body.getElementsByClass(TITLE);
+        Element title = null;
+        if(titleChoices.size() >= 1)
+            title = titleChoices.first();
 
-        return title.html();
+        if(titleChoices.size()==0) {
+            title = body.getElementById(TITLE2);
+        }
+
+        if(title == null)
+            throw new MalformedPageException("No title");
+
+        return title.text();
     }
 }

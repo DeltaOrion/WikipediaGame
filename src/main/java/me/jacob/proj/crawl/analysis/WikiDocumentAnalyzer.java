@@ -3,7 +3,7 @@ package me.jacob.proj.crawl.analysis;
 import me.jacob.proj.crawl.MalformedPageException;
 import me.jacob.proj.crawl.WebDocument;
 import me.jacob.proj.crawl.fetch.DocumentFetcher;
-import me.jacob.proj.crawl.fetch.TestDocumentFetcher;
+import me.jacob.proj.crawl.fetch.WebDocumentFetcher;
 import me.jacob.proj.model.WikiPage;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -27,11 +27,14 @@ public class WikiDocumentAnalyzer extends AbstractDocumentAnalyzer {
     private final static Pattern COMMA_PATTERN = Pattern.compile(",\\s*");
 
     public static void main(String[] args) throws MalformedURLException, MalformedPageException {
-        DocumentFetcher fetcher = new TestDocumentFetcher();
-        WebDocument doc = fetcher.fetch(new URL("https://en.wikipedia.org/wiki/Main_Page"));
+        DocumentFetcher fetcher = new WebDocumentFetcher();
+        WebDocument doc = fetcher.fetch(new URL("https://en.wikipedia.org/wiki/UK_(disambiguation)"));
         DocumentAnalyzer analyzer = new WikiDocumentAnalyzer();
         analyzer.setDocument(doc);
         analyzer.analyze();
+
+        System.out.println(analyzer.getLinks());
+        System.out.println(analyzer.getPage().getArticleType());
     }
 
 
@@ -43,10 +46,6 @@ public class WikiDocumentAnalyzer extends AbstractDocumentAnalyzer {
     @Override
     public void analyze() throws MalformedPageException {
         Document html = getDocument().getDocument();
-        /*
-         * Handle
-         *   - Disambiguation
-         */
         if(html==null)
             throw new MalformedPageException("no page for link");
 
@@ -63,15 +62,12 @@ public class WikiDocumentAnalyzer extends AbstractDocumentAnalyzer {
             return;
         }
 
-        if(isDisambiguation(html)) {
-            handleDisambiguation();
-            return;
-        }
-
         Element body = html.body();
         String title = getTitle(body);
 
         WikiPage page = new WikiPage(title, getDocument().getWikiLink());
+
+        page.setArticleType(getDocumentType(getDocument().getWikiLink(),html));
 
         Element langs = body.getElementById(LANG_ELE);
         harvestLangs(page,langs);
@@ -89,14 +85,6 @@ public class WikiDocumentAnalyzer extends AbstractDocumentAnalyzer {
             harvestLinks(catContent);
 
         analyzed = page;
-    }
-
-    private boolean isDisambiguation(Document html) {
-        return false;
-    }
-
-    private void handleDisambiguation() {
-
     }
 
     private boolean isMainPage(Document html) {
@@ -117,7 +105,7 @@ public class WikiDocumentAnalyzer extends AbstractDocumentAnalyzer {
         redirectAnalyzer.setDocument(getDocument());
         redirectAnalyzer.analyze();
         analyzed = redirectAnalyzer.getPage();
-        getLinkList().addAll(redirectAnalyzer.getLinks());
+        getLinkSet().addAll(redirectAnalyzer.getLinks());
         return;
     }
 

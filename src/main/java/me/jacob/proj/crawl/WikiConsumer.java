@@ -4,6 +4,7 @@ import me.jacob.proj.crawl.analysis.DocumentAnalyzer;
 import me.jacob.proj.crawl.analysis.WikiDocumentAnalyzer;
 import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.model.Wikipedia;
+import me.jacob.proj.util.Poisonable;
 
 public class WikiConsumer implements Runnable {
 
@@ -22,7 +23,14 @@ public class WikiConsumer implements Runnable {
             WebDocument document = null;
             DocumentAnalyzer analyzer = new WikiDocumentAnalyzer();
             try {
-                document = crawler.nextFetched();
+                System.out.println("Grabbing Document");
+                Poisonable<WebDocument> taken = crawler.nextFetched();
+                if(taken.isPoisoned()) {
+                    System.out.println("Consumer - shutting down");
+                    return;
+                }
+
+                document = taken.getItem();
                 System.out.println("Consuming "+document.getWikiLink());
                 analyzer.setDocument(document);
                 analyzer.analyze();
@@ -41,6 +49,8 @@ public class WikiConsumer implements Runnable {
                     crawler.unlink(document.getWikiLink());
 
                 System.out.println("Invalid Page '"+document.getWikiLink()+"' Reason: "+e.getMessage());
+            } catch (Throwable e) {
+                e.printStackTrace();
             }
         }
     }

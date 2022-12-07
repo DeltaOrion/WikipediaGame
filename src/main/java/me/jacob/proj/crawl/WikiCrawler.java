@@ -1,21 +1,20 @@
 package me.jacob.proj.crawl;
 
+import me.jacob.proj.crawl.fetch.FetcherType;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.model.Wikipedia;
+import me.jacob.proj.util.Poisonable;
 
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 public class WikiCrawler {
 
-    private final BlockingQueue<WikiLink> urls;
-    private final BlockingQueue<WebDocument> fetched;
+    private final BlockingDeque<Poisonable<WikiLink>> urls;
+    private final BlockingQueue<Poisonable<WebDocument>> fetched;
     private final Wikipedia wikipedia;
 
     private final Set<WikiLink> currentlyProcessed;
@@ -26,18 +25,21 @@ public class WikiCrawler {
     private final int producers;
     private final int consumers;
 
+    private final int earlyStop;
+    private int indexed;
+
     private ExecutorService executors;
 
-    public static void main(String[] args) throws MalformedURLException {
+    public static void main(String[] args) throws MalformedURLException, InterruptedException {
         Wikipedia wikipedia = new Wikipedia();
-        WikiCrawler crawler = new WikiCrawler(wikipedia, 1, 1);
-        crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Wikipedia_Red_Link")));
+        WikiCrawler crawler = new WikiCrawler(wikipedia, 2, 5,20);
+        crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Black_hole")));
     }
 
 
-    public WikiCrawler(Wikipedia wikipedia, int producers, int consumers) {
+    public WikiCrawler(Wikipedia wikipedia, int producers, int consumers, int earlystop) {
         this.wikipedia = wikipedia;
-        this.urls = new ArrayBlockingQueue<>(10000);
+        this.urls = new LinkedBlockingDeque<>();
         this.fetched = new ArrayBlockingQueue<>(1000);
         this.unconnectedEdges = new HashMap<>();
 
@@ -46,29 +48,32 @@ public class WikiCrawler {
 
         this.executors = Executors.newFixedThreadPool(producers + consumers);
         this.currentlyProcessed = new HashSet<>();
+
+        this.earlyStop = earlystop;
+        indexed = 0;
     }
 
-    public void start(WikiLink startURL) {
+    public void start(WikiLink startURL) throws InterruptedException {
         size = 1;
         for (int i = 0; i < consumers; i++)
             this.executors.submit(new WikiConsumer(wikipedia, this));
 
         for (int i = 0; i < producers; i++) {
-            this.executors.submit(new WikiProducer(wikipedia, this));
+            this.executors.submit(new WikiProducer(wikipedia, this, FetcherType.WEB));
         }
 
-        urls.add(startURL);
+        putLink(startURL);
     }
 
-    public WikiLink nextLink() throws InterruptedException {
+    public Poisonable<WikiLink> nextLink() throws InterruptedException {
         return urls.take();
     }
 
     public void addFetched(WebDocument document) throws InterruptedException {
-        fetched.add(document);
+        fetched.add(Poisonable.item(document));
     }
 
-    public WebDocument nextFetched() throws InterruptedException {
+    public Poisonable<WebDocument> nextFetched() throws InterruptedException {
         return fetched.take();
     }
 
@@ -81,8 +86,9 @@ public class WikiCrawler {
     }
 
     private void terminate() {
-        System.out.println("Terminating");
-        executors.shutdownNow();
+
+        executors.shutdown();
+        shutdown();
 
         for (WikiPage page : wikipedia.getPages()) {
             System.out.println(page.getTitle() + " " + page.getUniqueId());
@@ -99,38 +105,65 @@ public class WikiCrawler {
         }
     }
 
+    private void shutdown() {
+        for(int i=0;i<consumers;i++)
+            fetched.add(Poisonable.poison());
+
+        for(int i=0;i<producers;i++)
+            urls.push(Poisonable.poison());
+    }
+
     public void link(WikiPage page, Collection<WikiLink> links) throws InterruptedException {
         wikipedia.addPage(page);
-        size--;
+
+        List<WikiLink> unindexed = new ArrayList<>();
         for (WikiLink link : links) {
             WikiPage pageLink = wikipedia.getPage(link);
             if (pageLink != null) {
                 page.addNeighbour(pageLink);
             } else {
                 //in this case the link has not been crawled yet
-                //we need to add it to the unconnectedEdges
-                synchronized (this) {
-                    List<WikiPage> unconnected = unconnectedEdges.computeIfAbsent(link, k -> new ArrayList<>());
-                    unconnected.add(page);
-                }
+                //we need to add it to the unconnectedEdged
                 //add the link to be crawled
+                unindexed.add(link);
+            }
+        }
+
+        synchronized (this) {
+            for(WikiLink link : unindexed) {
+                List<WikiPage> unconnected = unconnectedEdges.computeIfAbsent(link, k -> new ArrayList<>());
+                unconnected.add(page);
                 addLink(link);
             }
         }
 
         //the unconnected link to this page. Add the links!
-        List<WikiPage> unconnected = unconnectedEdges.get(page.getLink());
-        if (unconnected != null) {
-            for (WikiPage p : unconnected)
-                p.addNeighbour(page);
+        List<WikiPage> unconnected = null;
+        synchronized (this) {
+            unconnected = unconnectedEdges.get(page.getLink());
+            unconnectedEdges.remove(page.getLink());
+        }
 
-            synchronized (this) {
-                unconnectedEdges.remove(page.getLink());
+        if (unconnected != null) {
+            for (WikiPage p : unconnected) {
+                p.addNeighbour(page);
             }
         }
 
-        if (size == 0)
-            terminate();
+        synchronized (this) {
+            size--;
+            indexed++;
+
+            if (size == 0) {
+                terminate();
+                return;
+            }
+
+            if(indexed >= earlyStop) {
+                terminate();
+                return;
+            }
+        }
     }
 
     private void addLink(WikiLink link) throws InterruptedException {
@@ -141,6 +174,10 @@ public class WikiCrawler {
             currentlyProcessed.add(link);
             size++;
         }
-        urls.put(link);
+        putLink(link);
+    }
+
+    private void putLink(WikiLink link) throws InterruptedException {
+        urls.put(Poisonable.item(link));
     }
 }
