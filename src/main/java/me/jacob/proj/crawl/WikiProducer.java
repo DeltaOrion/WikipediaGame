@@ -1,9 +1,6 @@
 package me.jacob.proj.crawl;
 
-import me.jacob.proj.crawl.fetch.DocumentFetcher;
-import me.jacob.proj.crawl.fetch.FetcherType;
-import me.jacob.proj.crawl.fetch.TestDocumentFetcher;
-import me.jacob.proj.crawl.fetch.WebDocumentFetcher;
+import me.jacob.proj.crawl.fetch.*;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.Wikipedia;
 import me.jacob.proj.util.Poisonable;
@@ -50,12 +47,19 @@ public class WikiProducer implements Runnable {
             return;
         }
 
-        WebDocument fetched = fetcher.fetch(link.getLink());
-        if(fetched == null) {
-            crawler.unlink(link);
-        } else {
-            System.out.println("Fetched "+link.getLink());
-            crawler.addFetched(fetched);
+        FetchResult fetched = fetcher.fetch(link);
+        switch (fetched.getStatus()) {
+            case SUCCESS -> {
+                System.out.println("Fetched "+link.getLink());
+                crawler.addFetched(fetched);
+            } case DOES_NOT_EXIST -> {
+                crawler.unlink(link);
+            } case CONNECTION_ERROR -> {
+                System.out.println("Connection Error when fetching '"+link.getLink()+"'");
+                crawler.stash(link);
+            } default -> {
+                throw new IllegalStateException();
+            }
         }
     }
 

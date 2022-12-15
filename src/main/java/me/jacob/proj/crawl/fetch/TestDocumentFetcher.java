@@ -1,6 +1,6 @@
 package me.jacob.proj.crawl.fetch;
 
-import me.jacob.proj.crawl.WebDocument;
+import me.jacob.proj.crawl.FetchResult;
 import me.jacob.proj.model.WikiLink;
 import org.jsoup.Jsoup;
 
@@ -14,18 +14,19 @@ public class TestDocumentFetcher implements DocumentFetcher {
     private final static Pattern FORWARD_SLASH_SPLIT = Pattern.compile("/");
 
     @Override
-    public WebDocument fetch(URL url) {
+    public FetchResult fetch(WikiLink link) {
+        URL url = link.getLink();
         String[] split = FORWARD_SLASH_SPLIT.split(url.getPath());
         String name = split[2];
         File file = new File("testpages",name+".txt");
         if(!file.exists()) {
-            return null;
+            return new FetchResult(link,FetchStatus.DOES_NOT_EXIST);
         }
 
         try {
-            return new WebDocument(new WikiLink(url),Jsoup.parse(file));
+            return new FetchResult(link,Jsoup.parse(file));
         } catch (IOException e) {
-            return null;
+            return new FetchResult(link,FetchStatus.CONNECTION_ERROR);
         }
     }
 }

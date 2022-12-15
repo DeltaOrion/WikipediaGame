@@ -1,10 +1,9 @@
 package me.jacob.proj.crawl.analysis;
 
 import me.jacob.proj.crawl.MalformedPageException;
-import me.jacob.proj.crawl.WebDocument;
+import me.jacob.proj.crawl.FetchResult;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
-import me.jacob.proj.model.Wikipedia;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
@@ -15,17 +14,17 @@ import java.util.Set;
 
 public class TestAnalyzer implements DocumentAnalyzer {
 
-    private WebDocument document;
+    private FetchResult document;
     private Set<WikiLink> linksFound = new HashSet<>();
     private WikiPage analyzed = null;
 
     @Override
-    public void setDocument(WebDocument document) {
+    public void setDocument(FetchResult document) {
        this.document = document;
     }
 
     @Override
-    public WebDocument getDocument() {
+    public FetchResult getDocument() {
         return document;
     }
 

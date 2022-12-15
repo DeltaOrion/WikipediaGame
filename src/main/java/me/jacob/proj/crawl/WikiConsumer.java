@@ -1,7 +1,6 @@
 package me.jacob.proj.crawl;
 
 import me.jacob.proj.crawl.analysis.DocumentAnalyzer;
-import me.jacob.proj.crawl.analysis.TestAnalyzer;
 import me.jacob.proj.crawl.analysis.WikiDocumentAnalyzer;
 import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.model.Wikipedia;
@@ -21,11 +20,11 @@ public class WikiConsumer implements Runnable {
     public void run() {
         //add stop logic
         while(!Thread.currentThread().isInterrupted()) {
-            WebDocument document = null;
+            FetchResult document = null;
             DocumentAnalyzer analyzer = new WikiDocumentAnalyzer();
             try {
                 System.out.println("Grabbing Document");
-                Poisonable<WebDocument> taken = crawler.nextFetched();
+                Poisonable<FetchResult> taken = crawler.nextFetched();
                 if(taken.isPoisoned()) {
                     System.out.println("Consumer - shutting down");
                     return;

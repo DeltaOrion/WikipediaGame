@@ -14,7 +14,7 @@ import java.util.concurrent.*;
 public class WikiCrawler {
 
     private final BlockingDeque<Poisonable<WikiLink>> urls;
-    private final BlockingQueue<Poisonable<WebDocument>> fetched;
+    private final BlockingQueue<Poisonable<FetchResult>> fetched;
     private final Wikipedia wikipedia;
 
     //improve processed repository logic.
@@ -27,17 +27,20 @@ public class WikiCrawler {
     private final int earlyStop;
     private int indexed;
 
+    private boolean shutdownOnSize;
+    private boolean shutDownOnEarlyStop;
+
     private ExecutorService executors;
 
     public static void main(String[] args) throws MalformedURLException, InterruptedException {
         Wikipedia wikipedia = new Wikipedia();
         LinkRepository repository = new LinkRepository();
-        WikiCrawler crawler = new WikiCrawler(wikipedia, repository, 3, 5, 200);
+        WikiCrawler crawler = new WikiCrawler(wikipedia, repository, 3, 5, 50,true,true);
         crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Black_hole")));
     }
 
 
-    public WikiCrawler(Wikipedia wikipedia, LinkRepository repository, int producers, int consumers, int earlystop) {
+    public WikiCrawler(Wikipedia wikipedia, LinkRepository repository, int producers, int consumers, int earlystop, boolean shutdownOnSize, boolean shutDownOnEarlyStop) {
         this.wikipedia = wikipedia;
         this.repository = repository;
 
@@ -49,6 +52,9 @@ public class WikiCrawler {
 
         this.executors = Executors.newFixedThreadPool(producers + consumers);
         this.earlyStop = earlystop;
+
+        this.shutDownOnEarlyStop = shutDownOnEarlyStop;
+        this.shutdownOnSize = shutdownOnSize;
 
         indexed = 0;
     }
@@ -69,19 +75,28 @@ public class WikiCrawler {
         return urls.take();
     }
 
-    public void addFetched(WebDocument document) throws InterruptedException {
+    public void addFetched(FetchResult document) throws InterruptedException {
         fetched.add(Poisonable.item(document));
     }
 
-    public Poisonable<WebDocument> nextFetched() throws InterruptedException {
+    public Poisonable<FetchResult> nextFetched() throws InterruptedException {
         return fetched.take();
     }
 
-    public synchronized void unlink(WikiLink link) {
+    public void unlink(WikiLink link) {
         //for whatever reason the link couldn't be fetched (malformed or non-existent).
         repository.deregister(link);
+        shrinkSize();
+    }
+
+    public void stash(WikiLink link) {
+        repository.stash(link);
+        shrinkSize();
+    }
+
+    private synchronized void shrinkSize() {
         size--;
-        if (size == 0) {
+        if (shutDownOnEarlyStop && size == 0) {
             System.out.println("Shutting down - no more pages");
             shutdown();
         }
@@ -153,19 +168,17 @@ public class WikiCrawler {
         }
 
         synchronized (this) {
-            size--;
-            indexed++;
+            shrinkSize();
+            incrementPages();
+        }
+    }
 
-            if (size == 0) {
-                System.out.println("Shutting down - out of docs to consume");
-                shutdown();
-                return;
-            }
+    private void incrementPages() {
+        indexed++;
 
-            if (indexed >= earlyStop) {
-                System.out.println("Shutting down - max pages indexed");
-                shutdown();
-            }
+        if (shutDownOnEarlyStop && indexed >= earlyStop) {
+            System.out.println("Shutting down - max pages indexed");
+            shutdown();
         }
     }
 
@@ -183,4 +196,5 @@ public class WikiCrawler {
     private void putLink(WikiLink link) throws InterruptedException {
         urls.put(Poisonable.item(link));
     }
+
 }

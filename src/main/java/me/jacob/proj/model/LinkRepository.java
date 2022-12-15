@@ -4,7 +4,6 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.function.Function;
 
 public class LinkRepository {
 
@@ -45,4 +44,8 @@ public class LinkRepository {
     }
 
 
+    public void stash(WikiLink wikilink) {
+        CrawlableLink link = getOrMake(wikilink);
+        link.setProcessed();
+    }
 }

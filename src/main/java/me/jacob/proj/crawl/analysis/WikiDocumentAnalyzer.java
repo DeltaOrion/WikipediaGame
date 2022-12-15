@@ -1,9 +1,10 @@
 package me.jacob.proj.crawl.analysis;
 
 import me.jacob.proj.crawl.MalformedPageException;
-import me.jacob.proj.crawl.WebDocument;
+import me.jacob.proj.crawl.FetchResult;
 import me.jacob.proj.crawl.fetch.DocumentFetcher;
 import me.jacob.proj.crawl.fetch.WebDocumentFetcher;
+import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -28,7 +29,7 @@ public class WikiDocumentAnalyzer extends AbstractDocumentAnalyzer {
 
     public static void main(String[] args) throws MalformedURLException, MalformedPageException {
         DocumentFetcher fetcher = new WebDocumentFetcher();
-        WebDocument doc = fetcher.fetch(new URL("https://en.wikipedia.org/wiki/UK_(disambiguation)"));
+        FetchResult doc = fetcher.fetch(new WikiLink(new URL("https://en.wikipedia.org/wiki/UK_(disambiguation)")));
         DocumentAnalyzer analyzer = new WikiDocumentAnalyzer();
         analyzer.setDocument(doc);
         analyzer.analyze();

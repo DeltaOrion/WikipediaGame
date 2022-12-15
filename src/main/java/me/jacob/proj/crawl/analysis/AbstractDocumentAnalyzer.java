@@ -1,7 +1,7 @@
 package me.jacob.proj.crawl.analysis;
 
 import me.jacob.proj.crawl.MalformedPageException;
-import me.jacob.proj.crawl.WebDocument;
+import me.jacob.proj.crawl.FetchResult;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
 import org.jsoup.nodes.Document;
@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 
 public abstract class AbstractDocumentAnalyzer implements DocumentAnalyzer {
 
-    private WebDocument document;
+    private FetchResult document;
     private final Set<WikiLink> linksFound;
     private final static Pattern DOT_PATTERN = Pattern.compile("\\.");
     private final static Pattern FILE_PATTERN = Pattern.compile("File:");
@@ -32,13 +32,13 @@ public abstract class AbstractDocumentAnalyzer implements DocumentAnalyzer {
     }
 
     @Override
-    public void setDocument(WebDocument document) {
+    public void setDocument(FetchResult document) {
         this.document = document;
         this.linksFound.clear();
     }
 
     @Override
-    public WebDocument getDocument() {
+    public FetchResult getDocument() {
         return document;
     }
 
