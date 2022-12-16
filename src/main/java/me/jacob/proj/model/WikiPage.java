@@ -16,6 +16,8 @@ public class WikiPage {
     private boolean isRedirect;
     private String articleType;
 
+    private boolean isRemoved;
+
     //path data
     private final List<List<WikiPage>> allPairShortest;
 
@@ -81,5 +83,13 @@ public class WikiPage {
 
     public void setArticleType(String articleType) {
         this.articleType = articleType;
+    }
+
+    public boolean isRemoved() {
+        return isRemoved;
+    }
+
+    public void setRemoved(boolean removed) {
+        isRemoved = removed;
     }
 }

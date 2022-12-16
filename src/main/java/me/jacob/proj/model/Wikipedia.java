@@ -39,7 +39,9 @@ public class Wikipedia {
         wikipedia.addPage(four);
         wikipedia.addPage(five);
 
+
         wikipedia.calculateAllShortestPaths();
+        four.setRemoved(true);
         System.out.println(wikipedia.getShortestPaths("2","4"));
     }
 
@@ -65,9 +67,12 @@ public class Wikipedia {
             }
             result.add(path);
         } else {
-            //this hasn't been indexed yet!
-            //stop
+            //this hasn't been indexed yet! - Stop
             if(B.getUniqueId() > A.getAllPairShortest().size())
+                return;
+
+            //this node has been removed, don't include it when finding the paths
+            if(B.isRemoved())
                 return;
 
             for(WikiPage path : A.getAllPairShortest().get(B.getUniqueId())) {
@@ -139,7 +144,6 @@ public class Wikipedia {
 
         allPairs.get(page.getUniqueId()).add(page);
 
-        int layer = 0;
         while (!queue.isEmpty()) {
             int size = queue.size();
             boolean[] thisLayer = new boolean[visited.length];
@@ -159,7 +163,6 @@ public class Wikipedia {
                     }
                 }
             }
-            layer++;
         }
     }
 }

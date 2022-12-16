@@ -38,6 +38,8 @@ public class WikiConsumer implements Runnable {
                 if(page==null)
                     throw new MalformedPageException();
 
+                //we successfully found and analyzed the page.
+                page.setRemoved(false);
                 System.out.println("Finished Consuming "+page.getTitle());
                 crawler.link(page,analyzer.getLinks());
             } catch (InterruptedException e) {
@@ -45,11 +47,14 @@ public class WikiConsumer implements Runnable {
                 return;
             } catch (MalformedPageException e) {
                 //if the page is not valid for whatever reason
-                if(document!=null)
-                    crawler.unlink(document.getWikiLink());
-
+                crawler.unlink(document.getWikiLink());
                 System.out.println("Invalid Page '"+document.getWikiLink()+"' Reason: "+e.getMessage());
             } catch (Throwable e) {
+                //in this case an error occurred with the analyzer. Stash the link for further
+                //usage and log the error.
+                if(document!=null)
+                    crawler.stash(document.getWikiLink());
+
                 e.printStackTrace();
             }
         }

@@ -46,6 +46,8 @@ public class LinkRepository {
 
     public void stash(WikiLink wikilink) {
         CrawlableLink link = getOrMake(wikilink);
+        //there was a connection error, assume the link has been processed
+        //this means it will be checked again at a later date.
         link.setProcessed();
     }
 }

@@ -4,8 +4,12 @@ import me.jacob.proj.crawl.fetch.FetcherType;
 import me.jacob.proj.model.*;
 import me.jacob.proj.util.Poisonable;
 
+import java.io.File;
+import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -30,15 +34,23 @@ public class WikiCrawler {
     private boolean shutdownOnSize;
     private boolean shutDownOnEarlyStop;
 
+    private boolean isShutDown;
+    private final CountDownLatch awaitLatch;
+
     private ExecutorService executors;
 
-    public static void main(String[] args) throws MalformedURLException, InterruptedException {
+    public static void main(String[] args) throws IOException, InterruptedException {
         Wikipedia wikipedia = new Wikipedia();
         LinkRepository repository = new LinkRepository();
-        WikiCrawler crawler = new WikiCrawler(wikipedia, repository, 3, 5, 50,true,true);
+        WikiCrawler crawler = new WikiCrawler(wikipedia, repository, 1, 1, 50,true,true);
         crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Black_hole")));
+        crawler.await();
+        Files.move(FileSystems.getDefault().getPath("testpages").resolve("Black_hole.txt"), FileSystems.getDefault().getPath("testpages").resolve("t").resolve("Black_hole.txt"));
+        crawler = new WikiCrawler(wikipedia, repository, 1, 1, 50,true,true);
+        crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Black_hole")));
+        crawler.await();
+        Files.move(FileSystems.getDefault().getPath("testpages").resolve("t").resolve("Black_hole.txt"), FileSystems.getDefault().getPath("testpages").resolve("Black_hole.txt"));
     }
-
 
     public WikiCrawler(Wikipedia wikipedia, LinkRepository repository, int producers, int consumers, int earlystop, boolean shutdownOnSize, boolean shutDownOnEarlyStop) {
         this.wikipedia = wikipedia;
@@ -57,15 +69,20 @@ public class WikiCrawler {
         this.shutdownOnSize = shutdownOnSize;
 
         indexed = 0;
+        this.isShutDown = false;
+        this.awaitLatch = new CountDownLatch(1);
     }
 
     public void start(WikiLink startURL) throws InterruptedException {
+        if(isShutDown)
+            throw new IllegalStateException("Wiki Crawler has shut down");
+
         size = 1;
         for (int i = 0; i < consumers; i++)
             this.executors.submit(new WikiConsumer(wikipedia, this));
 
         for (int i = 0; i < producers; i++) {
-            this.executors.submit(new WikiProducer(wikipedia, this, FetcherType.WEB));
+            this.executors.submit(new WikiProducer(wikipedia, this, FetcherType.TEST));
         }
 
         putLink(startURL);
@@ -86,6 +103,12 @@ public class WikiCrawler {
     public void unlink(WikiLink link) {
         //for whatever reason the link couldn't be fetched (malformed or non-existent).
         repository.deregister(link);
+
+        //if we have already found a page, then remove it
+        WikiPage page = wikipedia.getPage(link);
+        if(page!=null)
+            page.setRemoved(true);
+
         shrinkSize();
     }
 
@@ -103,9 +126,14 @@ public class WikiCrawler {
     }
 
     public void shutdown() {
+        if(isShutDown)
+            return;
+
+        isShutDown = true;
         System.out.println("Shutting down");
         executors.shutdown();
         stopWorkers();
+
 
         for (WikiPage page : wikipedia.getPages()) {
             System.out.println(page.getTitle() + " " + page.getUniqueId());
@@ -120,6 +148,12 @@ public class WikiCrawler {
         } catch (Throwable e) {
             e.printStackTrace();
         }
+
+        awaitLatch.countDown();
+    }
+
+    private void await() throws InterruptedException {
+        awaitLatch.await();
     }
 
     private void stopWorkers() {

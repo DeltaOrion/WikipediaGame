@@ -39,9 +39,6 @@ public class WikiProducer implements Runnable {
     }
 
     private void produce(WikiLink link) throws InterruptedException {
-        if(wikipedia.hasPage(link))
-            return;
-
         if(link.isMainPage()) {
             crawler.unlink(link);
             return;
