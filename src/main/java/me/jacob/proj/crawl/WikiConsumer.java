@@ -1,7 +1,7 @@
 package me.jacob.proj.crawl;
 
-import me.jacob.proj.crawl.analysis.DocumentAnalyzer;
-import me.jacob.proj.crawl.analysis.WikiDocumentAnalyzer;
+import me.jacob.proj.crawl.analysis.*;
+import me.jacob.proj.model.UpdateStatus;
 import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.model.Wikipedia;
 import me.jacob.proj.util.Poisonable;
@@ -10,10 +10,14 @@ public class WikiConsumer implements Runnable {
 
     private final Wikipedia wikipedia;
     private final WikiCrawler crawler;
+    private final int id;
+    private final AnalyzerType analyzerType;
 
-    public WikiConsumer(Wikipedia wikipedia, WikiCrawler crawler) {
+    public WikiConsumer(int id, Wikipedia wikipedia, WikiCrawler crawler,AnalyzerType analyzerType) {
         this.wikipedia = wikipedia;
         this.crawler = crawler;
+        this.id = id;
+        this.analyzerType = analyzerType;
     }
 
     @Override
@@ -21,27 +25,34 @@ public class WikiConsumer implements Runnable {
         //add stop logic
         while(!Thread.currentThread().isInterrupted()) {
             FetchResult document = null;
-            DocumentAnalyzer analyzer = new WikiDocumentAnalyzer();
+            DocumentAnalyzer analyzer = createAnalyzer();
             try {
-                System.out.println("Grabbing Document");
                 Poisonable<FetchResult> taken = crawler.nextFetched();
                 if(taken.isPoisoned()) {
-                    System.out.println("Consumer - shutting down");
+                    debug("Shutting Down");
                     return;
                 }
 
                 document = taken.getItem();
-                System.out.println("Consuming "+document.getWikiLink());
+                debug("Consuming "+ document.getWikiLink());
                 analyzer.setDocument(document);
                 analyzer.analyze();
-                WikiPage page = analyzer.getPage();
-                if(page==null)
+                WikiPage analyzed = analyzer.getPage();
+                if(analyzed==null)
                     throw new MalformedPageException();
 
-                //we successfully found and analyzed the page.
-                page.setRemoved(false);
-                System.out.println("Finished Consuming "+page.getTitle());
-                crawler.link(page,analyzer.getLinks());
+                //we successfully found and analyzed the analyzed.
+                analyzed.setRemoved(false);
+                debug("Finished Consuming "+document.getWikiLink());
+
+                WikiPage wikiPage = wikipedia.getPage(document.getWikiLink());
+                if(wikiPage!=null) {
+                    debug("Updating "+wikiPage.getTitle());
+                    crawler.update(wikiPage,analyzed,analyzer.getLinks());
+                } else {
+                    debug("Creating "+analyzed.getTitle());
+                    crawler.create(analyzed, analyzer.getLinks());
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
@@ -58,5 +69,24 @@ public class WikiConsumer implements Runnable {
                 e.printStackTrace();
             }
         }
+    }
+
+    private DocumentAnalyzer createAnalyzer() {
+        switch (this.analyzerType) {
+            case WIKIPEDIA -> {
+                return new WikiDocumentAnalyzer();
+            }
+            case TEST -> {
+                return new TestAnalyzer();
+            }
+            case REDIRECT -> {
+                return new RedirectDocumentAnalyzer();
+            }
+            default -> throw new IllegalStateException();
+        }
+    }
+
+    private void debug(String line) {
+        System.out.println("[Consumer "+id+"] "+line);
     }
 }

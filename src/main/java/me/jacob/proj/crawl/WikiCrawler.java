@@ -1,15 +1,15 @@
 package me.jacob.proj.crawl;
 
+import me.jacob.proj.crawl.analysis.AnalyzerType;
 import me.jacob.proj.crawl.fetch.FetcherType;
 import me.jacob.proj.model.*;
 import me.jacob.proj.util.Poisonable;
 
-import java.io.File;
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
-import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -39,38 +39,49 @@ public class WikiCrawler {
 
     private ExecutorService executors;
 
+    private final AnalyzerType analyzerType;
+    private final FetcherType fetchType;
+    private final Path crawlDirectory;
+
     public static void main(String[] args) throws IOException, InterruptedException {
         Wikipedia wikipedia = new Wikipedia();
         LinkRepository repository = new LinkRepository();
-        WikiCrawler crawler = new WikiCrawler(wikipedia, repository, 1, 1, 50,true,true);
+        WikiCrawler crawler = new WikiCrawler.Builder(wikipedia,repository)
+                .setShutDownOnEarlyStop(true)
+                .setShutDownOnSize(true)
+                .setConsumers(1)
+                .setProducers(1)
+                .setAnalyzerType(AnalyzerType.WIKIPEDIA)
+                .setFetchType(FetcherType.TEST)
+                .build();
+
         crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Black_hole")));
         crawler.await();
-        Files.move(FileSystems.getDefault().getPath("testpages").resolve("Black_hole.txt"), FileSystems.getDefault().getPath("testpages").resolve("t").resolve("Black_hole.txt"));
-        crawler = new WikiCrawler(wikipedia, repository, 1, 1, 50,true,true);
-        crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Black_hole")));
-        crawler.await();
-        Files.move(FileSystems.getDefault().getPath("testpages").resolve("t").resolve("Black_hole.txt"), FileSystems.getDefault().getPath("testpages").resolve("Black_hole.txt"));
     }
 
-    public WikiCrawler(Wikipedia wikipedia, LinkRepository repository, int producers, int consumers, int earlystop, boolean shutdownOnSize, boolean shutDownOnEarlyStop) {
-        this.wikipedia = wikipedia;
-        this.repository = repository;
+    private WikiCrawler(Builder builder) {
+        this.wikipedia = builder.wikipedia;
+        this.repository = builder.repository;
 
-        this.urls = new LinkedBlockingDeque<>();
-        this.fetched = new ArrayBlockingQueue<>(1000);
+        this.producers = builder.producers;
+        this.consumers = builder.consumers;
 
-        this.producers = producers;
-        this.consumers = consumers;
+        this.earlyStop = builder.earlyStop;
 
-        this.executors = Executors.newFixedThreadPool(producers + consumers);
-        this.earlyStop = earlystop;
+        this.shutDownOnEarlyStop = builder.shutDownOnEarlyStop;
+        this.shutdownOnSize = builder.shutDownOnSize;
 
-        this.shutDownOnEarlyStop = shutDownOnEarlyStop;
-        this.shutdownOnSize = shutdownOnSize;
+        this.fetchType = builder.fetchType;
+        this.analyzerType = builder.analyzerType;
+        this.crawlDirectory = builder.crawlDirectory;
 
         indexed = 0;
         this.isShutDown = false;
         this.awaitLatch = new CountDownLatch(1);
+
+        this.executors = Executors.newFixedThreadPool(producers + consumers);
+        this.urls = new LinkedBlockingDeque<>();
+        this.fetched = new ArrayBlockingQueue<>(builder.documentMaxCapacity);
     }
 
     public void start(WikiLink startURL) throws InterruptedException {
@@ -79,10 +90,10 @@ public class WikiCrawler {
 
         size = 1;
         for (int i = 0; i < consumers; i++)
-            this.executors.submit(new WikiConsumer(wikipedia, this));
+            this.executors.submit(new WikiConsumer(i,wikipedia, this, analyzerType));
 
         for (int i = 0; i < producers; i++) {
-            this.executors.submit(new WikiProducer(wikipedia, this, FetcherType.TEST));
+            this.executors.submit(new WikiProducer(i, wikipedia, this,crawlDirectory, fetchType));
         }
 
         putLink(startURL);
@@ -120,7 +131,7 @@ public class WikiCrawler {
     private synchronized void shrinkSize() {
         size--;
         if (shutDownOnEarlyStop && size == 0) {
-            System.out.println("Shutting down - no more pages");
+            debug("Shutting down - no more pages");
             shutdown();
         }
     }
@@ -130,7 +141,7 @@ public class WikiCrawler {
             return;
 
         isShutDown = true;
-        System.out.println("Shutting down");
+        debug("Shutting down");
         executors.shutdown();
         stopWorkers();
 
@@ -164,8 +175,21 @@ public class WikiCrawler {
             urls.push(Poisonable.poison());
     }
 
-    public void link(WikiPage page, Collection<WikiLink> links) throws InterruptedException {
+    public void create(WikiPage page, Collection<WikiLink> links) throws InterruptedException {
         wikipedia.addPage(page);
+        link(page,links);
+    }
+
+    public void update(WikiPage wikiPage, WikiPage page, Collection<WikiLink> links) throws InterruptedException {
+        UpdateStatus status = wikiPage.update(page,links);
+        wikipedia.update(wikiPage,status);
+        if(status.isUpdateLinks()) {
+            wikiPage.clearNeighbours();
+            link(wikiPage,links);
+        }
+    }
+
+    private void link(WikiPage page, Collection<WikiLink> links) throws InterruptedException {
         CrawlableLink pageRegLink = repository.getOrMake(page.getLink());
         pageRegLink.setProcessed();
 
@@ -190,10 +214,8 @@ public class WikiCrawler {
 
         //the unconnected link to this page. Add the links!
         Collection<WikiPage> unconnected = null;
-        synchronized (this) {
-            unconnected = pageRegLink.getUnconnected();
-            pageRegLink.unlink();
-        }
+        unconnected = pageRegLink.getUnconnected();
+        pageRegLink.unlink();
 
         if (unconnected != null) {
             for (WikiPage p : unconnected) {
@@ -210,8 +232,8 @@ public class WikiCrawler {
     private void incrementPages() {
         indexed++;
 
-        if (shutDownOnEarlyStop && indexed >= earlyStop) {
-            System.out.println("Shutting down - max pages indexed");
+        if (shutDownOnEarlyStop && earlyStop >= 0 && indexed >= earlyStop) {
+            debug("Shutting down: max pages indexed");
             shutdown();
         }
     }
@@ -229,6 +251,138 @@ public class WikiCrawler {
 
     private void putLink(WikiLink link) throws InterruptedException {
         urls.put(Poisonable.item(link));
+    }
+
+    private void debug(String line) {
+        System.out.println("[Crawler] "+line);
+    }
+
+    public static class Builder {
+        private final Wikipedia wikipedia;
+        private final LinkRepository repository;
+        private int producers;
+        private int consumers;
+
+        private int earlyStop;
+        private boolean shutDownOnEarlyStop;
+        private boolean shutDownOnSize;
+        private boolean isShutDownOnEarlyStop;
+
+        private FetcherType fetchType;
+        private AnalyzerType analyzerType;
+        private Path crawlDirectory;
+
+        private int documentMaxCapacity;
+
+        public Builder(Wikipedia wikipedia, LinkRepository repository) {
+            this.wikipedia = wikipedia;
+            this.repository = repository;
+
+            this.producers = 1;
+            this.consumers = 1;
+            this.earlyStop = -1;
+
+            this.shutDownOnEarlyStop = false;
+            this.shutDownOnSize = false;
+            this.documentMaxCapacity = 1000;
+
+            this.fetchType = FetcherType.WEB;
+            this.analyzerType = AnalyzerType.WIKIPEDIA;
+            this.crawlDirectory = FileSystems.getDefault().getPath("testpages");
+        }
+
+        public Wikipedia getWikipedia() {
+            return wikipedia;
+        }
+
+        public LinkRepository getRepository() {
+            return repository;
+        }
+
+        public int getProducers() {
+            return producers;
+        }
+
+        public Builder setProducers(int producers) {
+            this.producers = producers;
+            return this;
+        }
+
+        public int getConsumers() {
+            return consumers;
+        }
+
+        public Builder setConsumers(int consumers) {
+            this.consumers = consumers;
+            return this;
+        }
+
+        public int getEarlyStop() {
+            return earlyStop;
+        }
+
+        public Builder setEarlyStop(int earlyStop) {
+            this.earlyStop = earlyStop;
+            return this;
+        }
+
+        public boolean isShutDownOnEarlyStop() {
+            return shutDownOnEarlyStop;
+        }
+
+        public Builder setShutDownOnEarlyStop(boolean shutDownOnEarlyStop) {
+            this.shutDownOnEarlyStop = shutDownOnEarlyStop;
+            return this;
+        }
+
+        public FetcherType getFetchType() {
+            return fetchType;
+        }
+
+        public Builder setFetchType(FetcherType fetchType) {
+            this.fetchType = fetchType;
+            return this;
+        }
+
+        public AnalyzerType getAnalyzerType() {
+            return analyzerType;
+        }
+
+        public Builder setAnalyzerType(AnalyzerType analyzerType) {
+            this.analyzerType = analyzerType;
+            return this;
+        }
+
+        public Path getCrawlDirectory() {
+            return crawlDirectory;
+        }
+
+        public Builder setCrawlDirectory(Path crawlDirectory) {
+            this.crawlDirectory = crawlDirectory;
+            return this;
+        }
+
+        public boolean isShutDownOnSize() {
+            return shutDownOnSize;
+        }
+
+        public Builder setShutDownOnSize(boolean shutDownOnSize) {
+            this.shutDownOnSize = shutDownOnSize;
+            return this;
+        }
+
+        public int getDocumentMaxCapacity() {
+            return documentMaxCapacity;
+        }
+
+        public Builder setDocumentMaxCapacity(int documentMaxCapacity) {
+            this.documentMaxCapacity = documentMaxCapacity;
+            return this;
+        }
+
+        public WikiCrawler build() {
+            return new WikiCrawler(this);
+        }
     }
 
 }

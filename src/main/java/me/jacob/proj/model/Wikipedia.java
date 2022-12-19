@@ -7,8 +7,17 @@ public class Wikipedia {
 
     private final AtomicInteger pageCount = new AtomicInteger(0);
 
-    private final Map<String,WikiPage> pages;
-    private final Map<WikiLink,WikiPage> links;
+    private final Map<String,WikiPage> byName;
+    private final Map<WikiLink,WikiPage> byLink;
+
+    /**
+     * TODO
+     *   - Clean up debugging
+     *   - Make testing easier, i.e. create crawler in test mode, specify test directory.
+     *   - Add automated unit tests
+     *
+     * @param args
+     */
 
     public static void main(String[] args) {
         Wikipedia wikipedia = new Wikipedia();
@@ -46,8 +55,8 @@ public class Wikipedia {
     }
 
     public List<List<WikiPage>> getShortestPaths(String a, String b) {
-        WikiPage A = pages.get(a);
-        WikiPage B = pages.get(b);
+        WikiPage A = byName.get(a);
+        WikiPage B = byName.get(b);
 
         if(A == null || B == null)
             return new ArrayList<>();
@@ -84,43 +93,43 @@ public class Wikipedia {
     }
 
     public Wikipedia() {
-        this.pages = new HashMap<>();
-        this.links = new HashMap<>();
+        this.byName = new HashMap<>();
+        this.byLink = new HashMap<>();
     }
 
     public synchronized void addPage(WikiPage page) {
-        if(pages.containsKey(page.getTitle()))
+        if(byName.containsKey(page.getTitle()))
             return;
 
         int nextPage = pageCount.getAndIncrement();
-        this.pages.put(page.getTitle(),page);
-        this.links.put(page.getLink(),page);
+        this.byName.put(page.getTitle(),page);
+        this.byLink.put(page.getLink(),page);
         page.setUniqueId(nextPage);
     }
 
     public synchronized WikiPage getPage(String title) {
-        return pages.get(title);
+        return byName.get(title);
     }
 
     public synchronized WikiPage getPage(WikiLink link) {
-        return links.get(link);
+        return byLink.get(link);
     }
 
     public synchronized boolean hasPage(String page) {
-        return this.pages.containsKey(page);
+        return this.byName.containsKey(page);
     }
 
     public synchronized boolean hasPage(WikiLink page) {
-        return this.links.containsKey(page);
+        return this.byLink.containsKey(page);
     }
 
     public synchronized Collection<WikiPage> getPages() {
-        return Collections.unmodifiableCollection(pages.values());
+        return Collections.unmodifiableCollection(byName.values());
     }
 
     public void calculateAllShortestPaths() {
         try {
-            for (WikiPage page : pages.values()) {
+            for (WikiPage page : byName.values()) {
                 updatePaths(page);
             }
 
@@ -131,14 +140,14 @@ public class Wikipedia {
 
     public void updatePaths(WikiPage page) {
         Queue<WikiPage> queue = new ArrayDeque<>();
-        boolean[] visited = new boolean[pages.size()];
+        boolean[] visited = new boolean[byName.size()];
         visited[page.getUniqueId()] = true;
         queue.add(page);
 
         List<List<WikiPage>> allPairs = page.getAllPairShortest();
         allPairs.clear();
 
-        for(int i=0;i<pages.size();i++) {
+        for(int i = 0; i< byName.size(); i++) {
             allPairs.add(new ArrayList<>());
         }
 
@@ -163,6 +172,13 @@ public class Wikipedia {
                     }
                 }
             }
+        }
+    }
+
+    public synchronized void update(WikiPage wikiPage, UpdateStatus status) {
+        if(status.isUpdateTitle()) {
+            byName.remove(status.getOldTitle());
+            byName.put(wikiPage.getTitle(),wikiPage);
         }
     }
 }

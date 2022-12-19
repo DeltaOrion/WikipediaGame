@@ -33,12 +33,16 @@ public class TestAnalyzer implements DocumentAnalyzer {
         Document html = document.getDocument();
         Element body = html.body();
         String title = body.getElementById("title").text();
+
         Elements links = html.getElementsByTag("a");
         for(Element link : links) {
             linksFound.add(new WikiLink("/wiki/"+link.html()));
         }
 
         analyzed = new WikiPage(title, document.getWikiLink());
+        Element description = body.getElementById("description");
+        if(description!=null)
+            analyzed.setDescription(description.text());
     }
 
     @Override

@@ -5,16 +5,22 @@ import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.Wikipedia;
 import me.jacob.proj.util.Poisonable;
 
+import java.nio.file.Path;
+
 public class WikiProducer implements Runnable {
 
+    private final int id;
     private final Wikipedia wikipedia;
     private final WikiCrawler crawler;
     private final DocumentFetcher fetcher;
+    private final Path crawlDirectory;
 
-    public WikiProducer(Wikipedia wikipedia, WikiCrawler crawler, FetcherType type) {
+    public WikiProducer(int id, Wikipedia wikipedia, WikiCrawler crawler, Path crawlDirectory, FetcherType type) {
+        this.id = id;
         this.wikipedia = wikipedia;
         this.crawler = crawler;
         this.fetcher = getFetcher(type);
+        this.crawlDirectory = crawlDirectory;
     }
 
     @Override
@@ -23,7 +29,7 @@ public class WikiProducer implements Runnable {
             try {
                 Poisonable<WikiLink> taken = crawler.nextLink();
                 if(taken.isPoisoned()) {
-                    System.out.println("Poison shutting down");
+                    debug("Shutting Down");
                     return;
                 }
 
@@ -47,12 +53,12 @@ public class WikiProducer implements Runnable {
         FetchResult fetched = fetcher.fetch(link);
         switch (fetched.getStatus()) {
             case SUCCESS -> {
-                System.out.println("Fetched "+link.getLink());
+                debug("Fetched "+link.getLink());
                 crawler.addFetched(fetched);
             } case DOES_NOT_EXIST -> {
                 crawler.unlink(link);
             } case CONNECTION_ERROR -> {
-                System.out.println("Connection Error when fetching '"+link.getLink()+"'");
+                debug("Connection Error when fetching '"+link.getLink()+"'");
                 crawler.stash(link);
             } default -> {
                 throw new IllegalStateException();
@@ -66,10 +72,14 @@ public class WikiProducer implements Runnable {
                 return new WebDocumentFetcher();
             }
             case TEST -> {
-                return new TestDocumentFetcher();
+                return new TestDocumentFetcher(crawlDirectory);
             }
         }
 
         throw new UnsupportedOperationException();
+    }
+
+    private void debug(String line) {
+        System.out.println("[Producer "+id+"] "+line);
     }
 }

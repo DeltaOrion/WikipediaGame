@@ -1,14 +1,12 @@
 package me.jacob.proj.model;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 public class WikiPage {
 
     //node data
     private int uniqueId;
-    private final String title;
+    private String title;
     private String description;
     private final WikiLink link;
     private final List<WikiPage> neighbours;
@@ -33,7 +31,7 @@ public class WikiPage {
         return title;
     }
 
-    public String getDescription() {
+    public synchronized String getDescription() {
         return description;
     }
 
@@ -45,7 +43,7 @@ public class WikiPage {
         this.neighbours.add(neighbour);
     }
 
-    public void setDescription(String description) {
+    public synchronized void setDescription(String description) {
         this.description = description;
     }
 
@@ -91,5 +89,53 @@ public class WikiPage {
 
     public void setRemoved(boolean removed) {
         isRemoved = removed;
+    }
+
+    public synchronized UpdateStatus update(WikiPage page, Collection<WikiLink> linksFound) {
+        UpdateStatus status = new UpdateStatus();
+
+        if(!page.description.equals(this.description)) {
+            this.description = page.description;
+            status.setUpdateDescription(true);
+        }
+
+        if(!page.title.equals(this.title)) {
+            status.setUpdateTitle(true);
+            status.setOldTitle(this.title);
+            this.title = page.title;
+        }
+
+        if(linksFound.size() != this.neighbours.size()) {
+            status.setUpdateLinks(true);
+            return status;
+        }
+
+        Set<WikiLink> linksSet = new HashSet<>(linksFound);
+        for(WikiPage p : neighbours) {
+            linksSet.remove(p.getLink());
+        }
+
+        if(linksSet.size()!=0)
+            status.setUpdateLinks(true);
+
+        return status;
+    }
+
+    @Override
+    public synchronized boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        WikiPage wikiPage = (WikiPage) o;
+        return uniqueId == wikiPage.uniqueId && Objects.equals(description, wikiPage.description) && Objects.equals(link, wikiPage.link);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(uniqueId, description, link);
+    }
+
+    public synchronized void clearNeighbours() {
+        this.neighbours.clear();
+        this.allPairShortest.clear();
     }
 }
