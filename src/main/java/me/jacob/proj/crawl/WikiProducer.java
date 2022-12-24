@@ -13,14 +13,12 @@ public class WikiProducer implements Runnable {
     private final Wikipedia wikipedia;
     private final WikiCrawler crawler;
     private final DocumentFetcher fetcher;
-    private final Path crawlDirectory;
 
-    public WikiProducer(int id, Wikipedia wikipedia, WikiCrawler crawler, Path crawlDirectory, FetcherType type) {
+    public WikiProducer(int id, Wikipedia wikipedia, WikiCrawler crawler, DocumentFetcher fetcher) {
         this.id = id;
         this.wikipedia = wikipedia;
         this.crawler = crawler;
-        this.fetcher = getFetcher(type);
-        this.crawlDirectory = crawlDirectory;
+        this.fetcher = fetcher;
     }
 
     @Override
@@ -66,18 +64,6 @@ public class WikiProducer implements Runnable {
         }
     }
 
-    private DocumentFetcher getFetcher(FetcherType type) {
-        switch (type) {
-            case WEB -> {
-                return new WebDocumentFetcher();
-            }
-            case TEST -> {
-                return new TestDocumentFetcher(crawlDirectory);
-            }
-        }
-
-        throw new UnsupportedOperationException();
-    }
 
     private void debug(String line) {
         System.out.println("[Producer "+id+"] "+line);

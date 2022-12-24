@@ -63,8 +63,11 @@ public class WikiPage {
         this.uniqueId = uniqueId;
     }
 
+    @Override
     public String toString() {
-        return title + " "+uniqueId;
+        return "WikiPage{" +
+                "title='" + title + '\'' +
+                '}';
     }
 
     public boolean isRedirect() {

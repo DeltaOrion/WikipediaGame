@@ -1,7 +1,6 @@
 package me.jacob.proj.crawl;
 
 import me.jacob.proj.crawl.analysis.*;
-import me.jacob.proj.model.UpdateStatus;
 import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.model.Wikipedia;
 import me.jacob.proj.util.Poisonable;
@@ -11,13 +10,13 @@ public class WikiConsumer implements Runnable {
     private final Wikipedia wikipedia;
     private final WikiCrawler crawler;
     private final int id;
-    private final AnalyzerType analyzerType;
+    private final DocumentAnalyzer analyzer;
 
-    public WikiConsumer(int id, Wikipedia wikipedia, WikiCrawler crawler,AnalyzerType analyzerType) {
+    public WikiConsumer(int id, Wikipedia wikipedia, WikiCrawler crawler, DocumentAnalyzer analyzer) {
         this.wikipedia = wikipedia;
         this.crawler = crawler;
         this.id = id;
-        this.analyzerType = analyzerType;
+        this.analyzer = analyzer;
     }
 
     @Override
@@ -25,7 +24,6 @@ public class WikiConsumer implements Runnable {
         //add stop logic
         while(!Thread.currentThread().isInterrupted()) {
             FetchResult document = null;
-            DocumentAnalyzer analyzer = createAnalyzer();
             try {
                 Poisonable<FetchResult> taken = crawler.nextFetched();
                 if(taken.isPoisoned()) {
@@ -68,21 +66,6 @@ public class WikiConsumer implements Runnable {
 
                 e.printStackTrace();
             }
-        }
-    }
-
-    private DocumentAnalyzer createAnalyzer() {
-        switch (this.analyzerType) {
-            case WIKIPEDIA -> {
-                return new WikiDocumentAnalyzer();
-            }
-            case TEST -> {
-                return new TestAnalyzer();
-            }
-            case REDIRECT -> {
-                return new RedirectDocumentAnalyzer();
-            }
-            default -> throw new IllegalStateException();
         }
     }
 

@@ -21,6 +21,7 @@ public class TestAnalyzer implements DocumentAnalyzer {
     @Override
     public void setDocument(FetchResult document) {
        this.document = document;
+       this.linksFound.clear();
     }
 
     @Override

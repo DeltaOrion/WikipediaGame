@@ -12,11 +12,23 @@ public class Wikipedia {
 
     /**
      * TODO
-     *   - Clean up debugging
-     *   - Make testing easier, i.e. create crawler in test mode, specify test directory.
-     *   - Add automated unit tests
+     *   - Better dependency injection with the fetcher
+     *   - Better test fetcher which retrieves from an object
+     *   - Begin transitioning to MVC
+     *       - Wikipedia belongs to service layer, move update and create functions for wikipedia pages
+     *       - Separate LinkService from LinkRepository
+     *       - Create repositories for wikipedia and links
+     *    Performance
+     *      - Find out how long consumers and produces are blocked/starving
+     *    Services
+     *    - add UpdateWorkers which crawl through link repository
+     *    - UpdateWorkers are released when the process is finished
+     *    Controllers
+     *    - Find CLI library.
+     *    - Start by adding CLI controllers and views
      *
-     * @param args
+     *
+     *
      */
 
     public static void main(String[] args) {

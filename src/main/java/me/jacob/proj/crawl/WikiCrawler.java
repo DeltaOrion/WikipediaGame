@@ -1,14 +1,18 @@
 package me.jacob.proj.crawl;
 
-import me.jacob.proj.crawl.analysis.AnalyzerType;
-import me.jacob.proj.crawl.fetch.FetcherType;
+import me.jacob.proj.crawl.analysis.DocumentAnalyzer;
+import me.jacob.proj.crawl.analysis.TestAnalyzer;
+import me.jacob.proj.crawl.analysis.WikiDocumentAnalyzer;
+import me.jacob.proj.crawl.fetch.DocumentFetcher;
+import me.jacob.proj.crawl.fetch.TestDocumentFetcher;
+import me.jacob.proj.crawl.fetch.WebDocumentFetcher;
 import me.jacob.proj.model.*;
 import me.jacob.proj.util.Poisonable;
+import me.jacob.proj.util.TestPage;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.URL;
-import java.nio.file.FileSystem;
-import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -39,24 +43,69 @@ public class WikiCrawler {
 
     private ExecutorService executors;
 
-    private final AnalyzerType analyzerType;
-    private final FetcherType fetchType;
-    private final Path crawlDirectory;
+    private final DocumentAnalyzer analyzer;
+    private final DocumentFetcher fetcher;
 
     public static void main(String[] args) throws IOException, InterruptedException {
         Wikipedia wikipedia = new Wikipedia();
         LinkRepository repository = new LinkRepository();
+
+        TestDocumentFetcher fetcher = getTest1();
+
         WikiCrawler crawler = new WikiCrawler.Builder(wikipedia,repository)
                 .setShutDownOnEarlyStop(true)
                 .setShutDownOnSize(true)
                 .setConsumers(1)
                 .setProducers(1)
-                .setAnalyzerType(AnalyzerType.WIKIPEDIA)
-                .setFetchType(FetcherType.TEST)
+                .setAnalyzer(new TestAnalyzer())
+                .setFetcher(fetcher)
                 .build();
 
-        crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Black_hole")));
+        crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/1")));
         crawler.await();
+
+        TestPage page = fetcher.getPage("1");
+        page.setTitle("Title1");
+        page.setDescription("description");
+        page.removeLink("3");
+
+        WikiPage wikiPage = wikipedia.getPage(new WikiLink(new URL("https://en.wikipedia.org/wiki/1")));
+        System.out.println("--- Details ---");
+        System.out.println(wikiPage.getTitle());
+        System.out.println(wikiPage.getDescription());
+        System.out.println(wikiPage.getNeighbours());
+        System.out.println("----------------");
+
+        crawler = new WikiCrawler.Builder(wikipedia,repository)
+                .setShutDownOnEarlyStop(true)
+                .setShutDownOnSize(true)
+                .setConsumers(1)
+                .setProducers(1)
+                .setAnalyzer(new TestAnalyzer())
+                .setFetcher(fetcher)
+                .build();
+
+        crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/1")));
+        crawler.await();
+
+        wikiPage = wikipedia.getPage(new WikiLink(new URL("https://en.wikipedia.org/wiki/1")));
+        System.out.println("--- Details ---");
+        System.out.println(wikiPage.getTitle());
+        System.out.println(wikiPage.getDescription());
+        System.out.println(wikiPage.getNeighbours());
+        System.out.println("----------------");
+    }
+
+    private static TestDocumentFetcher getTest1() throws IOException {
+        TestDocumentFetcher fetcher = new TestDocumentFetcher();
+        File directory = new File("testpages").toPath().resolve("b").toFile();
+        for(File file : directory.listFiles()) {
+            if(file.getName().endsWith(".txt")) {
+                fetcher.addPage(TestPage.fromFile(file));
+            }
+        }
+
+        return fetcher;
     }
 
     private WikiCrawler(Builder builder) {
@@ -71,9 +120,8 @@ public class WikiCrawler {
         this.shutDownOnEarlyStop = builder.shutDownOnEarlyStop;
         this.shutdownOnSize = builder.shutDownOnSize;
 
-        this.fetchType = builder.fetchType;
-        this.analyzerType = builder.analyzerType;
-        this.crawlDirectory = builder.crawlDirectory;
+        this.fetcher = builder.fetcher;
+        this.analyzer = builder.analyzer;
 
         indexed = 0;
         this.isShutDown = false;
@@ -90,10 +138,10 @@ public class WikiCrawler {
 
         size = 1;
         for (int i = 0; i < consumers; i++)
-            this.executors.submit(new WikiConsumer(i,wikipedia, this, analyzerType));
+            this.executors.submit(new WikiConsumer(i,wikipedia, this, analyzer));
 
         for (int i = 0; i < producers; i++) {
-            this.executors.submit(new WikiProducer(i, wikipedia, this,crawlDirectory, fetchType));
+            this.executors.submit(new WikiProducer(i, wikipedia, this, fetcher));
         }
 
         putLink(startURL);
@@ -130,7 +178,7 @@ public class WikiCrawler {
 
     private synchronized void shrinkSize() {
         size--;
-        if (shutDownOnEarlyStop && size == 0) {
+        if (shutdownOnSize && size == 0) {
             debug("Shutting down - no more pages");
             shutdown();
         }
@@ -266,11 +314,9 @@ public class WikiCrawler {
         private int earlyStop;
         private boolean shutDownOnEarlyStop;
         private boolean shutDownOnSize;
-        private boolean isShutDownOnEarlyStop;
 
-        private FetcherType fetchType;
-        private AnalyzerType analyzerType;
-        private Path crawlDirectory;
+        private DocumentFetcher fetcher;
+        private DocumentAnalyzer analyzer;
 
         private int documentMaxCapacity;
 
@@ -286,9 +332,8 @@ public class WikiCrawler {
             this.shutDownOnSize = false;
             this.documentMaxCapacity = 1000;
 
-            this.fetchType = FetcherType.WEB;
-            this.analyzerType = AnalyzerType.WIKIPEDIA;
-            this.crawlDirectory = FileSystems.getDefault().getPath("testpages");
+            this.fetcher = new WebDocumentFetcher();
+            this.analyzer = new WikiDocumentAnalyzer();
         }
 
         public Wikipedia getWikipedia() {
@@ -335,30 +380,21 @@ public class WikiCrawler {
             return this;
         }
 
-        public FetcherType getFetchType() {
-            return fetchType;
+        public DocumentFetcher getFetcher() {
+            return fetcher;
         }
 
-        public Builder setFetchType(FetcherType fetchType) {
-            this.fetchType = fetchType;
+        public Builder setFetcher(DocumentFetcher fetcher) {
+            this.fetcher = fetcher;
             return this;
         }
 
-        public AnalyzerType getAnalyzerType() {
-            return analyzerType;
+        public DocumentAnalyzer getAnalyzer() {
+            return analyzer;
         }
 
-        public Builder setAnalyzerType(AnalyzerType analyzerType) {
-            this.analyzerType = analyzerType;
-            return this;
-        }
-
-        public Path getCrawlDirectory() {
-            return crawlDirectory;
-        }
-
-        public Builder setCrawlDirectory(Path crawlDirectory) {
-            this.crawlDirectory = crawlDirectory;
+        public Builder setAnalyzer(DocumentAnalyzer analyzer) {
+            this.analyzer = analyzer;
             return this;
         }
 

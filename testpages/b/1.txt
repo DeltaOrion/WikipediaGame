@@ -1,5 +1,5 @@
 <p id = "title">1</p>
-<p id = "description">one is a good number</p>
+<p id = "description">description</p>
 <a>2</a>
 <a>3</a>
 <a>7</a>

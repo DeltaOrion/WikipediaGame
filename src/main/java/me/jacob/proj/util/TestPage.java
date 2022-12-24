@@ -77,11 +77,16 @@ public class TestPage {
         page.setDescription(description);
         return page;
     }
+
+    public String getLink() {
+        return link;
+    }
+
     public String asString() {
         StringBuilder documentBuilder = new StringBuilder();
         documentBuilder.append("<p id = \"title\">"+title+"</p>");
         documentBuilder.append(System.lineSeparator());
-        if(!description.isEmpty()) {
+        if(description != null && !description.isEmpty()) {
             documentBuilder.append("<p id = \"description\">"+description+"</p>");
             documentBuilder.append(System.lineSeparator());
         }
@@ -118,7 +123,7 @@ public class TestPage {
         String fileFullName = file.getName();
         String name = fileFullName.substring(0,fileFullName.length()-4);
 
-        WikiLink wikiLink = new WikiLink(name);
+        WikiLink wikiLink = new WikiLink("/wiki/"+name);
         FetchResult result = new FetchResult(wikiLink,document);
 
         TestAnalyzer analyzer = new TestAnalyzer();
