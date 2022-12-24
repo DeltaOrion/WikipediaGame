@@ -12,8 +12,6 @@ public class Wikipedia {
 
     /**
      * TODO
-     *   - Better dependency injection with the fetcher
-     *   - Better test fetcher which retrieves from an object
      *   - Begin transitioning to MVC
      *       - Wikipedia belongs to service layer, move update and create functions for wikipedia pages
      *       - Separate LinkService from LinkRepository

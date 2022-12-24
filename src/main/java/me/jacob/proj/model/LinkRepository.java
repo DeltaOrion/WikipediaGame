@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentMap;
 public class LinkRepository {
 
     private final ConcurrentMap<WikiLink,CrawlableLink> links;
-    private final Duration timeBetweenUpdates;
+    private Duration timeBetweenUpdates;
 
     public LinkRepository() {
         this.links = new ConcurrentHashMap<>();
@@ -36,7 +36,12 @@ public class LinkRepository {
     }
 
     public void deregister(WikiLink link) {
-        links.remove(link);
+        CrawlableLink registeredLink = getOrMake(link);
+        registeredLink.setPageFound(false);
+
+        //this link shouldn't be checked until later
+        //unless it should be crawled
+        registeredLink.setProcessed();
     }
 
     public CrawlableLink getOrMake(WikiLink link) {
@@ -45,9 +50,18 @@ public class LinkRepository {
 
 
     public void stash(WikiLink wikilink) {
-        CrawlableLink link = getOrMake(wikilink);
-        //there was a connection error, assume the link has been processed
+        CrawlableLink registeredLink = getOrMake(wikilink);
+        registeredLink.setPageFound(false);
+        //there was a connection error, assume the registeredLink has been processed
         //this means it will be checked again at a later date.
-        link.setProcessed();
+        registeredLink.setProcessed();
+    }
+
+    public Duration getTimeBetweenUpdates() {
+        return timeBetweenUpdates;
+    }
+
+    public void setTimeBetweenUpdates(Duration timeBetweenUpdates) {
+        this.timeBetweenUpdates = timeBetweenUpdates;
     }
 }

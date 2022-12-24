@@ -11,21 +11,41 @@ public class WikiConsumer implements Runnable {
     private final WikiCrawler crawler;
     private final int id;
     private final DocumentAnalyzer analyzer;
+    private boolean running;
+
+    //--- Stats Divider --/
+    private int consumed = 0;
+    private long totalStarvationTime = 0;
 
     public WikiConsumer(int id, Wikipedia wikipedia, WikiCrawler crawler, DocumentAnalyzer analyzer) {
         this.wikipedia = wikipedia;
         this.crawler = crawler;
         this.id = id;
         this.analyzer = analyzer;
+        this.running = false;
     }
 
     @Override
     public void run() {
+        synchronized (this) {
+            if(running)
+                return;
+
+            running = true;
+        }
         //add stop logic
         while(!Thread.currentThread().isInterrupted()) {
             FetchResult document = null;
             try {
+                long beforeTimer = System.nanoTime();
                 Poisonable<FetchResult> taken = crawler.nextFetched();
+                long afterTimer = System.nanoTime();
+
+                synchronized (this) {
+                    consumed++;
+                    totalStarvationTime += (afterTimer - beforeTimer);
+                }
+
                 if(taken.isPoisoned()) {
                     debug("Shutting Down");
                     return;
@@ -39,7 +59,7 @@ public class WikiConsumer implements Runnable {
                 if(analyzed==null)
                     throw new MalformedPageException();
 
-                //we successfully found and analyzed the analyzed.
+                //we successfully found and analyzed the page.
                 analyzed.setRemoved(false);
                 debug("Finished Consuming "+document.getWikiLink());
 
@@ -71,5 +91,21 @@ public class WikiConsumer implements Runnable {
 
     private void debug(String line) {
         System.out.println("[Consumer "+id+"] "+line);
+    }
+
+    public synchronized int getConsumed() {
+        return consumed;
+    }
+
+    public synchronized long getTotalStarvationTime() {
+        return totalStarvationTime;
+    }
+
+    public synchronized boolean isRunning() {
+        return running;
+    }
+
+    public int getId() {
+        return this.id;
     }
 }

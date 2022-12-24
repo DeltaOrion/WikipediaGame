@@ -8,12 +8,14 @@ public class CrawlableLink {
     private final WikiLink link;
     private boolean processed;
     private boolean registered;
+    private boolean pageFound;
     private long lastProcessed;
 
     public CrawlableLink(WikiLink link) {
         this.link = link;
         this.processed = false;
         this.registered = false;
+        this.pageFound = false;
         this.lastProcessed = -1;
         this.unconnectedEdges = new HashSet<>();
     }
@@ -54,5 +56,13 @@ public class CrawlableLink {
 
     public void setRegistered(boolean registered) {
         this.registered = registered;
+    }
+
+    public boolean isPageFound() {
+        return pageFound;
+    }
+
+    public void setPageFound(boolean pageFound) {
+        this.pageFound = pageFound;
     }
 }

@@ -7,6 +7,7 @@ import org.jsoup.Jsoup;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.regex.Pattern;
 
@@ -24,7 +25,14 @@ public class FileDocumentFetcher implements DocumentFetcher {
         URL url = link.getLink();
         String[] split = FORWARD_SLASH_SPLIT.split(url.getPath());
         String name = split[2];
-        File file = crawlDirectory.resolve(name+".txt").toFile();
+
+        File file = null;
+        try {
+            file = crawlDirectory.resolve(name + ".txt").toFile();
+        } catch (InvalidPathException e) {
+            return new FetchResult(link,FetchStatus.DOES_NOT_EXIST);
+        }
+
         if(!file.exists()) {
             return new FetchResult(link,FetchStatus.DOES_NOT_EXIST);
         }
