@@ -28,10 +28,11 @@ public class CrawlableLink {
         return processed;
     }
 
-    public synchronized void setProcessed() {
+    public synchronized void setProcessed(boolean pageFound) {
         this.processed = true;
-        registered = false;
-        lastProcessed = System.currentTimeMillis();
+        this.registered = false;
+        this.pageFound = pageFound;
+        this.lastProcessed = System.currentTimeMillis();
     }
 
     public long getLastProcessed() {
@@ -46,7 +47,13 @@ public class CrawlableLink {
         unconnectedEdges = new HashSet<>();
     }
 
-    public Collection<WikiPage> getUnconnected() {
+    public synchronized Collection<WikiPage> getAndUnlink() {
+        List<WikiPage> pages = new ArrayList<>(unconnectedEdges);
+        unconnectedEdges.clear();
+        return pages;
+    }
+
+    public synchronized Collection<WikiPage> getUnconnected() {
         return Collections.unmodifiableSet(unconnectedEdges);
     }
 

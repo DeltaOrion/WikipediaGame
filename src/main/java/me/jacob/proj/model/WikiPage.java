@@ -94,34 +94,8 @@ public class WikiPage {
         isRemoved = removed;
     }
 
-    public synchronized UpdateStatus update(WikiPage page, Collection<WikiLink> linksFound) {
-        UpdateStatus status = new UpdateStatus();
-
-        if(!page.description.equals(this.description)) {
-            this.description = page.description;
-            status.setUpdateDescription(true);
-        }
-
-        if(!page.title.equals(this.title)) {
-            status.setUpdateTitle(true);
-            status.setOldTitle(this.title);
-            this.title = page.title;
-        }
-
-        if(linksFound.size() != this.neighbours.size()) {
-            status.setUpdateLinks(true);
-            return status;
-        }
-
-        Set<WikiLink> linksSet = new HashSet<>(linksFound);
-        for(WikiPage p : neighbours) {
-            linksSet.remove(p.getLink());
-        }
-
-        if(linksSet.size()!=0)
-            status.setUpdateLinks(true);
-
-        return status;
+    public void setTitle(String title) {
+        this.title = title;
     }
 
     @Override

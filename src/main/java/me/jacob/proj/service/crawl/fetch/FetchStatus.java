@@ -1,4 +1,4 @@
-package me.jacob.proj.crawl.fetch;
+package me.jacob.proj.service.crawl.fetch;
 
 public enum FetchStatus {
 

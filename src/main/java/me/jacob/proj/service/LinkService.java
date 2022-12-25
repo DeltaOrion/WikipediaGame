@@ -1,16 +1,19 @@
-package me.jacob.proj.model;
+package me.jacob.proj.service;
+
+import me.jacob.proj.model.CrawlableLink;
+import me.jacob.proj.model.WikiLink;
 
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-public class LinkRepository {
+public class LinkService {
 
-    private final ConcurrentMap<WikiLink,CrawlableLink> links;
+    private final ConcurrentMap<WikiLink, CrawlableLink> links;
     private Duration timeBetweenUpdates;
 
-    public LinkRepository() {
+    public LinkService() {
         this.links = new ConcurrentHashMap<>();
         this.timeBetweenUpdates = Duration.of(100, ChronoUnit.SECONDS);
     }
@@ -37,11 +40,10 @@ public class LinkRepository {
 
     public void deregister(WikiLink link) {
         CrawlableLink registeredLink = getOrMake(link);
-        registeredLink.setPageFound(false);
 
         //this link shouldn't be checked until later
         //unless it should be crawled
-        registeredLink.setProcessed();
+        registeredLink.setProcessed(false);
     }
 
     public CrawlableLink getOrMake(WikiLink link) {
@@ -51,10 +53,9 @@ public class LinkRepository {
 
     public void stash(WikiLink wikilink) {
         CrawlableLink registeredLink = getOrMake(wikilink);
-        registeredLink.setPageFound(false);
         //there was a connection error, assume the registeredLink has been processed
         //this means it will be checked again at a later date.
-        registeredLink.setProcessed();
+        registeredLink.setProcessed(false);
     }
 
     public Duration getTimeBetweenUpdates() {

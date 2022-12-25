@@ -1,6 +1,6 @@
-package me.jacob.proj.crawl;
+package me.jacob.proj.service.crawl;
 
-import me.jacob.proj.crawl.fetch.FetchStatus;
+import me.jacob.proj.service.crawl.fetch.FetchStatus;
 import me.jacob.proj.model.WikiLink;
 import org.jsoup.nodes.Document;
 

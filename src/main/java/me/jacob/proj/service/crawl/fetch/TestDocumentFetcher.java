@@ -1,11 +1,9 @@
-package me.jacob.proj.crawl.fetch;
+package me.jacob.proj.service.crawl.fetch;
 
-import me.jacob.proj.crawl.FetchResult;
+import me.jacob.proj.service.crawl.FetchResult;
 import me.jacob.proj.model.WikiLink;
-import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.util.TestPage;
 
-import java.io.File;
 import java.net.URL;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;

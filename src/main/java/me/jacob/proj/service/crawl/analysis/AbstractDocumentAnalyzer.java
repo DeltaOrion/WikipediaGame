@@ -1,7 +1,7 @@
-package me.jacob.proj.crawl.analysis;
+package me.jacob.proj.service.crawl.analysis;
 
-import me.jacob.proj.crawl.MalformedPageException;
-import me.jacob.proj.crawl.FetchResult;
+import me.jacob.proj.service.crawl.MalformedPageException;
+import me.jacob.proj.service.crawl.FetchResult;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
 import org.jsoup.nodes.Document;
