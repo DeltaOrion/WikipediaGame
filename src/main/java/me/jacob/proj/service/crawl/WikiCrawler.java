@@ -167,6 +167,8 @@ public class WikiCrawler {
                 .setProducers(1)
                 .setAnalyzer(new TestAnalyzerFactory())
                 .setFetcher(fetcher)
+                .setCreatesUntilBulkPublish(3)
+                .setCreatesUntilCalculation(3)
                 .build();
 
         crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/1")));
@@ -368,12 +370,16 @@ public class WikiCrawler {
     }
 
     public void update(WikiPage original, WikiPage newPage, Collection<WikiLink> links) throws InterruptedException {
-        addLinks(wikipedia.update(original,
+        Collection<WikiLink> l = wikipedia.update(original,
                 newPage.getTitle(),
                 newPage.getDescription(),
                 newPage.isRedirect(),
                 newPage.getArticleType(),
-                links));
+                links);
+
+        addLinks(l);
+        if(l.size()>0)
+            toCalculate.put(original,new Object());
 
         boolean doCalculation = false;
         synchronized (this) {
@@ -392,7 +398,8 @@ public class WikiCrawler {
     }
 
     public void create(WikiPage page, Collection<WikiLink> links) throws InterruptedException {
-        addLinks(wikipedia.create(page,links));
+        addLinks(wikipedia.bulkCreate(page,links));
+        toCalculate.put(page, new Object());
         boolean publishUpdate = false;
         boolean doCalculation = false;
         synchronized (this) {

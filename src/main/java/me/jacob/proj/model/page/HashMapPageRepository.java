@@ -4,57 +4,93 @@ import me.jacob.proj.model.PageRepository;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Consumer;
 
 public class HashMapPageRepository implements PageRepository {
 
-    private final ConcurrentMap<WikiLink,WikiPage> byLink;
-    private final ConcurrentMap<String,WikiPage> byName;
-    private final ConcurrentMap<Integer,WikiPage> byId;
+    private final Map<WikiLink, WikiPage> byLink;
+    private final Map<String, WikiPage> byName;
+    private final Map<Integer, WikiPage> byId;
+    private final ReadWriteLock lock;
 
     private final AtomicInteger pageCount = new AtomicInteger(0);
 
     public HashMapPageRepository() {
-        this.byLink = new ConcurrentHashMap<>();
-        this.byName = new ConcurrentHashMap<>();
-        this.byId = new ConcurrentHashMap<>();
+        this.byLink = new HashMap<>();
+        this.byName = new HashMap<>();
+        this.byId = new HashMap<>();
+        this.lock = new ReentrantReadWriteLock();
     }
 
     @Override
     public WikiPage getPage(String title) {
-        return byName.get(title);
+        try {
+            lock.readLock().lock();
+            return byName.get(title);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public WikiPage getPage(int id) {
-        return byId.get(id);
+        try {
+            lock.readLock().lock();
+            return byId.get(id);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public WikiPage getPage(WikiLink link) {
-        return byLink.get(link);
+        try {
+            lock.readLock().lock();
+            return byLink.get(link);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public Collection<WikiPage> getAllPages() {
-        return Collections.unmodifiableCollection(byName.values());
+        try {
+            lock.readLock().lock();
+            return Collections.unmodifiableCollection(byName.values());
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
-    public synchronized void createPage(WikiPage page) {
-        byLink.put(page.getLink(),page);
-        byName.put(page.getTitle(),page);
-        byId.put(page.getUniqueId(),page);
+    public void createPage(WikiPage page) {
+        try {
+            lock.writeLock().lock();
+            create(page);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    private void create(WikiPage page) {
+        byLink.put(page.getLink(), page);
+        byName.put(page.getTitle(), page);
+        byId.put(page.getUniqueId(), page);
     }
 
     @Override
     public void createPages(Collection<WikiPage> pages) {
-        for(WikiPage page : pages) {
-            createPage(page);
+        try {
+            lock.writeLock().lock();
+            for (WikiPage page : pages) {
+                create(page);
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
@@ -64,14 +100,24 @@ public class HashMapPageRepository implements PageRepository {
     }
 
     @Override
-    public synchronized void updateName(String oldTitle, WikiPage page) {
-        byName.remove(oldTitle);
-        byName.put(page.getTitle(),page);
+    public void updateName(String oldTitle, WikiPage page) {
+        try {
+            lock.writeLock().lock();
+            byName.remove(oldTitle);
+            byName.put(page.getTitle(), page);
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     @Override
     public int getAmountOfPages() {
-        return byName.size();
+        try {
+            lock.readLock().lock();
+            return byName.size();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
@@ -79,9 +125,22 @@ public class HashMapPageRepository implements PageRepository {
         return pageCount.getAndIncrement();
     }
 
-    public synchronized void clear() {
-        byName.clear();
-        byLink.clear();
-        byId.clear();
+    private void clear() {
+
+    }
+
+    public Set<WikiPage> clearAndDo(Consumer<Set<WikiPage>> action) {
+        try {
+            lock.writeLock().lock();
+            Set<WikiPage> existing = new HashSet<>(byName.values());
+            action.accept(existing);
+
+            byName.clear();
+            byLink.clear();
+            byId.clear();
+            return existing;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 }

@@ -179,15 +179,7 @@ public class Wikipedia {
     }
 
     public void publishBulkCreate() {
-        Set<WikiPage> bulkUpdate = null;
-        synchronized (this) {
-            bulkUpdate = new HashSet<>(bulkCreate.getAllPages());
-            bulkCreate.clear();
-        }
-
-        if(bulkUpdate.size()==0)
-            return;
-        repository.createPages(bulkUpdate);
+        bulkCreate.clearAndDo(repository::createPages);
     }
     //we could also return a create status with more detailed information in the future
     public Collection<WikiLink> create(WikiPage page, Collection<WikiLink> linksFound) {
@@ -201,7 +193,7 @@ public class Wikipedia {
     }
 
     public void create(WikiPage page) {
-        if(repository.getPage(page.getLink())!=null)
+        if(getPage(page.getLink())!=null)
             return;
 
         page.setUniqueId(repository.nextUniqueId());
