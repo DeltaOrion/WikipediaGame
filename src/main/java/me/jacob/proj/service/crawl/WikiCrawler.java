@@ -1,5 +1,6 @@
 package me.jacob.proj.service.crawl;
 
+import me.jacob.proj.model.page.HashMapLinkRepository;
 import me.jacob.proj.model.page.HashMapPageRepository;
 import me.jacob.proj.service.crawl.analysis.factory.AnalyzerFactory;
 import me.jacob.proj.service.crawl.analysis.factory.TestAnalyzerFactory;
@@ -26,13 +27,13 @@ public class WikiCrawler {
 
     private final BlockingDeque<Poisonable<WikiLink>> urls;
     private final BlockingQueue<Poisonable<FetchResult>> fetched;
-    private final Wikipedia wikipedia;
 
     private final List<WikiConsumer> consumers;
     private final List<WikiProducer> producers;
 
     //improve processed repository logic.
-    private final LinkService repository;
+    private final Wikipedia wikipedia;
+    private final LinkService linkService;
     private int size = 0;
 
     private final int noOfProducers;
@@ -48,15 +49,15 @@ public class WikiCrawler {
     private int createsSinceLastPublish;
     private int createsSinceLastCalculation;
     private int updatesSinceLastCalculation;
-    private ConcurrentMap<WikiPage,Object> toCalculate;
+    private final ConcurrentMap<WikiPage,Object> toCalculate;
 
-    private boolean shutdownOnSize;
-    private boolean shutDownOnEarlyStop;
+    private final boolean shutdownOnSize;
+    private final boolean shutDownOnEarlyStop;
 
     private boolean isShutDown;
     private final CountDownLatch awaitLatch;
 
-    private ExecutorService executors;
+    private final ExecutorService executors;
 
     private final AnalyzerFactory analyzer;
     private final DocumentFetcher fetcher;
@@ -66,7 +67,7 @@ public class WikiCrawler {
     }
 
     private static void performanceTest() throws MalformedURLException, InterruptedException {
-        LinkService repository = new LinkService();
+        LinkService repository = new LinkService(new HashMapLinkRepository());
         Wikipedia wikipedia = new Wikipedia(repository,new HashMapPageRepository());
 
         WikiCrawler crawler = new WikiCrawler.Builder(wikipedia,repository)
@@ -134,7 +135,7 @@ public class WikiCrawler {
     }
 
     private static void fileTest() throws MalformedURLException, InterruptedException {
-        LinkService repository = new LinkService();
+        LinkService repository = new LinkService(new HashMapLinkRepository());
         Wikipedia wikipedia = new Wikipedia(repository, new HashMapPageRepository());
 
         WikiCrawler crawler = new WikiCrawler.Builder(wikipedia,repository)
@@ -152,7 +153,7 @@ public class WikiCrawler {
     }
 
     private static void updateTest() throws IOException, InterruptedException {
-        LinkService repository = new LinkService();
+        LinkService repository = new LinkService(new HashMapLinkRepository());
         Wikipedia wikipedia = new Wikipedia(repository, new HashMapPageRepository());
         repository.setTimeBetweenUpdates(Duration.ZERO);
 
@@ -248,7 +249,7 @@ public class WikiCrawler {
 
     private WikiCrawler(Builder builder) {
         this.wikipedia = builder.wikipedia;
-        this.repository = builder.repository;
+        this.linkService = builder.linkService;
 
         this.noOfProducers = builder.producers;
         this.noOfConsumers = builder.consumers;
@@ -322,7 +323,7 @@ public class WikiCrawler {
     }
 
     public void stash(WikiLink link) {
-        repository.stash(link);
+        linkService.stash(link);
         shrinkSize();
     }
 
@@ -345,8 +346,23 @@ public class WikiCrawler {
 
         wikipedia.publishBulkCreate();
         calculateAll();
+        deregisterLinks();
 
         awaitLatch.countDown();
+    }
+
+    private void deregisterLinks() {
+        Iterator<Poisonable<WikiLink>> links = urls.iterator();
+        while (links.hasNext()) {
+            Poisonable<WikiLink> taken = links.next();
+            if(!taken.isPoisoned()) {
+                CrawlableLink link =  linkService.get(taken.getItem());
+                if(link!=null) {
+                    link.setRegistered(false);
+                }
+                links.remove();
+            }
+        }
     }
 
     private void calculateAll() {
@@ -439,14 +455,15 @@ public class WikiCrawler {
     }
 
     private void addLinks(Collection<WikiLink> links) throws InterruptedException {
-        for(WikiLink link : links) {
-            addLink(repository.getOrMake(link));
+        Collection<CrawlableLink> registeredLinks = linkService.getOrMake(links);
+        for(CrawlableLink link : registeredLinks) {
+            addLink(link);
         }
     }
 
     //adds an indexed link
     private void addLink(CrawlableLink link) throws InterruptedException {
-        if (!repository.shouldBeCrawled(link))
+        if (!linkService.shouldBeCrawled(link))
             return;
 
         link.setRegistered(true);
@@ -476,7 +493,7 @@ public class WikiCrawler {
 
     public static class Builder {
         private final Wikipedia wikipedia;
-        private final LinkService repository;
+        private final LinkService linkService;
         private int producers;
         private int consumers;
 
@@ -492,9 +509,9 @@ public class WikiCrawler {
         private int createsUntilCalculation;
         private int updatesUntilCalculation;
 
-        public Builder(Wikipedia wikipedia, LinkService repository) {
+        public Builder(Wikipedia wikipedia, LinkService linkService) {
             this.wikipedia = wikipedia;
-            this.repository = repository;
+            this.linkService = linkService;
 
             //recommended ratio -  60:1
             this.producers = 60;
@@ -517,8 +534,8 @@ public class WikiCrawler {
             return wikipedia;
         }
 
-        public LinkService getRepository() {
-            return repository;
+        public LinkService getLinkService() {
+            return linkService;
         }
 
         public int getProducers() {

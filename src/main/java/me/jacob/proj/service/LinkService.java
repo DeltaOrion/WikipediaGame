@@ -1,25 +1,25 @@
 package me.jacob.proj.service;
 
 import me.jacob.proj.model.CrawlableLink;
+import me.jacob.proj.model.LinkRepository;
 import me.jacob.proj.model.WikiLink;
 
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.Collection;
 
 public class LinkService {
 
-    private final ConcurrentMap<WikiLink, CrawlableLink> links;
     private Duration timeBetweenUpdates;
+    private LinkRepository linkRepository;
 
-    public LinkService() {
-        this.links = new ConcurrentHashMap<>();
+    public LinkService(LinkRepository linkRepository) {
+        this.linkRepository = linkRepository;
         this.timeBetweenUpdates = Duration.of(100, ChronoUnit.SECONDS);
     }
 
     public boolean shouldBeCrawled(WikiLink link) {
-        return shouldBeCrawled(links.get(link));
+        return shouldBeCrawled(get(link));
     }
 
     public boolean shouldBeCrawled(CrawlableLink registeredLink) {
@@ -34,22 +34,35 @@ public class LinkService {
         return System.currentTimeMillis() - registeredLink.getLastProcessed() > timeBetweenUpdates.toMillis();
     }
 
-    public void registerLink(WikiLink link) {
-        links.putIfAbsent(link,new CrawlableLink(link));
+    public void createLink(WikiLink link) {
+        if(linkRepository.get(link)!=null)
+            return;
+
+        linkRepository.create(new CrawlableLink(link));
     }
 
     public void deregister(WikiLink link) {
         CrawlableLink registeredLink = getOrMake(link);
-
         //this link shouldn't be checked until later
         //unless it should be crawled
         registeredLink.setProcessed(false);
     }
 
     public CrawlableLink getOrMake(WikiLink link) {
-        return links.computeIfAbsent(link, CrawlableLink::new);
+        return linkRepository.getOrMake(link);
     }
 
+    public CrawlableLink get(WikiLink link) {
+        return linkRepository.getOrMake(link);
+    }
+
+    public Collection<CrawlableLink> getAll() {
+        return linkRepository.getAll();
+    }
+
+    public void update(CrawlableLink link) {
+        linkRepository.update(link);
+    }
 
     public void stash(WikiLink wikilink) {
         CrawlableLink registeredLink = getOrMake(wikilink);
@@ -64,5 +77,9 @@ public class LinkService {
 
     public void setTimeBetweenUpdates(Duration timeBetweenUpdates) {
         this.timeBetweenUpdates = timeBetweenUpdates;
+    }
+
+    public Collection<CrawlableLink> getOrMake(Collection<WikiLink> links) {
+        return linkRepository.getOrMake(links);
     }
 }

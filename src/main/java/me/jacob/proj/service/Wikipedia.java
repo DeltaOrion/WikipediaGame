@@ -4,6 +4,7 @@ import me.jacob.proj.model.CrawlableLink;
 import me.jacob.proj.model.PageRepository;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
+import me.jacob.proj.model.page.HashMapLinkRepository;
 import me.jacob.proj.model.page.HashMapPageRepository;
 
 import java.util.*;
@@ -18,10 +19,9 @@ public class Wikipedia {
     /**
      * TODO
      *   - Begin transitioning to MVC
-     *       - Wikipedia belongs to service layer, move update and create functions for wikipedia pages
      *       - Separate LinkService from LinkRepository
      *       - Create repositories for wikipedia and links
-     *       - Create Neo4j data persistance solution
+     *       - Create Neo4j data persistence solution and lazy loading.
      *    Performance
      *      - Stop precalculating all of the shortest paths and instead calculate it on demand using Neo4j or a BFS search
      *    Services
@@ -34,7 +34,7 @@ public class Wikipedia {
      */
 
     public static void main(String[] args) {
-        LinkService service = new LinkService();
+        LinkService service = new LinkService(new HashMapLinkRepository());
         Wikipedia wikipedia = new Wikipedia(service, new HashMapPageRepository());
         WikiPage one = new WikiPage("0",new WikiLink("1"));
         WikiPage two = new WikiPage("1",new WikiLink("2"));
