@@ -77,7 +77,7 @@ public class WikiConsumer implements Runnable {
             } catch (MalformedPageException e) {
                 //if the page is not valid for whatever reason
                 crawler.unlink(document.getWikiLink());
-                System.out.println("Invalid Page '"+document.getWikiLink()+"' Reason: "+e.getMessage());
+                debug("Invalid Page '"+document.getWikiLink()+"' Reason: "+e.getMessage());
             } catch (Throwable e) {
                 //in this case an error occurred with the analyzer. Stash the link for further
                 //usage and log the error.

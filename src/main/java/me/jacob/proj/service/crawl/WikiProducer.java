@@ -8,7 +8,6 @@ import me.jacob.proj.util.Poisonable;
 public class WikiProducer implements Runnable {
 
     private final int id;
-    private final Wikipedia wikipedia;
     private final WikiCrawler crawler;
     private final DocumentFetcher fetcher;
     private boolean running;
@@ -20,9 +19,8 @@ public class WikiProducer implements Runnable {
     private int placed = 0;
     private long totalBlockedTime = 0;
 
-    public WikiProducer(int id, Wikipedia wikipedia, WikiCrawler crawler, DocumentFetcher fetcher) {
+    public WikiProducer(int id, WikiCrawler crawler, DocumentFetcher fetcher) {
         this.id = id;
-        this.wikipedia = wikipedia;
         this.crawler = crawler;
         this.fetcher = fetcher;
         this.running = false;
@@ -65,31 +63,14 @@ public class WikiProducer implements Runnable {
     }
 
     private void produce(WikiLink link) throws InterruptedException {
-        if(link.isMainPage()) {
-            crawler.unlink(link);
-            return;
-        }
-
         FetchResult fetched = fetcher.fetch(link);
-        switch (fetched.getStatus()) {
-            case SUCCESS -> {
-                debug("Fetched "+link.getLink());
-                long before = System.nanoTime();
-                crawler.addFetched(fetched);
-                long after = System.nanoTime();
+        long before = System.nanoTime();
+        crawler.addFetched(fetched);
+        long after = System.nanoTime();
 
-                synchronized (this) {
-                    totalBlockedTime += (after - before);
-                    placed++;
-                }
-            } case DOES_NOT_EXIST -> {
-                crawler.unlink(link);
-            } case CONNECTION_ERROR -> {
-                debug("Connection Error when fetching '"+link.getLink()+"'");
-                crawler.stash(link);
-            } default -> {
-                throw new IllegalStateException();
-            }
+        synchronized (this) {
+            totalBlockedTime += (after - before);
+            placed++;
         }
     }
 

@@ -4,6 +4,7 @@ import java.util.*;
 
 public class CrawlableLink {
 
+    private final int uniqueId;
     private Set<WikiPage> unconnectedEdges;
     private final WikiLink link;
     private boolean processed;
@@ -11,13 +12,14 @@ public class CrawlableLink {
     private boolean pageFound;
     private long lastProcessed;
 
-    public CrawlableLink(WikiLink link) {
+    public CrawlableLink(WikiLink link, int uniqueId) {
         this.link = link;
         this.processed = false;
         this.registered = false;
         this.pageFound = false;
         this.lastProcessed = -1;
         this.unconnectedEdges = new HashSet<>();
+        this.uniqueId = uniqueId;
     }
 
     public WikiLink getLink() {
@@ -71,5 +73,18 @@ public class CrawlableLink {
 
     public void setPageFound(boolean pageFound) {
         this.pageFound = pageFound;
+    }
+
+    public int getUniqueId() {
+        return uniqueId;
+    }
+
+    @Override
+    public String toString() {
+        return "CrawlableLink{" +
+                "uniqueId=" + uniqueId +
+                ", link=" + link +
+                ", processed=" + processed +
+                '}';
     }
 }

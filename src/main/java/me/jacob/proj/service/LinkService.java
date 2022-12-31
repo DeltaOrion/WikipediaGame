@@ -7,15 +7,20 @@ import me.jacob.proj.model.WikiLink;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Collection;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class LinkService {
 
     private Duration timeBetweenUpdates;
-    private LinkRepository linkRepository;
+    private final LinkRepository linkRepository;
+    private final AtomicInteger lastBlock;
+    private final int blockSize;
 
-    public LinkService(LinkRepository linkRepository) {
+    public LinkService(LinkRepository linkRepository, int blockSize) {
         this.linkRepository = linkRepository;
+        this.blockSize = blockSize;
         this.timeBetweenUpdates = Duration.of(100, ChronoUnit.SECONDS);
+        this.lastBlock = new AtomicInteger(0);
     }
 
     public boolean shouldBeCrawled(WikiLink link) {
@@ -38,7 +43,7 @@ public class LinkService {
         if(linkRepository.get(link)!=null)
             return;
 
-        linkRepository.create(new CrawlableLink(link));
+        linkRepository.create(new CrawlableLink(link,linkRepository.nextUniqueId()));
     }
 
     public void deregister(WikiLink link) {
@@ -81,5 +86,30 @@ public class LinkService {
 
     public Collection<CrawlableLink> getOrMake(Collection<WikiLink> links) {
         return linkRepository.getOrMake(links);
+    }
+
+    public void update(Collection<CrawlableLink> registeredLinks) {
+        linkRepository.updateAll(registeredLinks);
+    }
+
+    public int size() {
+        return linkRepository.getAmountOfLinks();
+    }
+
+    public Collection<CrawlableLink> getNextBlock() {
+        int minBlock = lastBlock.getAndUpdate(operand -> {
+            operand = operand + blockSize;
+            if(operand > linkRepository.getAmountOfLinks())
+                operand = 0;
+
+            return operand;
+        });
+        int maxBlock = minBlock + blockSize;
+
+        return linkRepository.getBetween(minBlock,maxBlock);
+    }
+
+    public int getBlockSize() {
+        return blockSize;
     }
 }

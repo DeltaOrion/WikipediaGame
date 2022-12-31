@@ -1,7 +1,8 @@
 package me.jacob.proj.service.crawl;
 
-import me.jacob.proj.model.page.HashMapLinkRepository;
-import me.jacob.proj.model.page.HashMapPageRepository;
+import me.jacob.proj.model.map.HashMapLinkRepository;
+import me.jacob.proj.model.map.HashMapPageRepository;
+import me.jacob.proj.service.UpdateWorker;
 import me.jacob.proj.service.crawl.analysis.factory.AnalyzerFactory;
 import me.jacob.proj.service.crawl.analysis.factory.TestAnalyzerFactory;
 import me.jacob.proj.service.crawl.analysis.factory.WikiAnalyzerFactory;
@@ -12,6 +13,7 @@ import me.jacob.proj.service.crawl.fetch.WebDocumentFetcher;
 import me.jacob.proj.model.*;
 import me.jacob.proj.service.LinkService;
 import me.jacob.proj.service.Wikipedia;
+import me.jacob.proj.util.AtomicIntCounter;
 import me.jacob.proj.util.Poisonable;
 import me.jacob.proj.util.TestPage;
 
@@ -20,6 +22,7 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -30,6 +33,7 @@ public class WikiCrawler {
 
     private final List<WikiConsumer> consumers;
     private final List<WikiProducer> producers;
+    private final List<UpdateWorker> updaters;
 
     //improve processed repository logic.
     private final Wikipedia wikipedia;
@@ -38,6 +42,7 @@ public class WikiCrawler {
 
     private final int noOfProducers;
     private final int noOfConsumers;
+    private final int noOfUpdaters;
 
     private final int earlyStop;
     private int indexed;
@@ -63,12 +68,12 @@ public class WikiCrawler {
     private final DocumentFetcher fetcher;
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        updateTest();
+        fileTest();
     }
 
     private static void performanceTest() throws MalformedURLException, InterruptedException {
-        LinkService repository = new LinkService(new HashMapLinkRepository());
-        Wikipedia wikipedia = new Wikipedia(repository,new HashMapPageRepository());
+        LinkService repository = new LinkService(new HashMapLinkRepository(new AtomicIntCounter()), 100);
+        Wikipedia wikipedia = new Wikipedia(repository,new HashMapPageRepository(new AtomicIntCounter()));
 
         WikiCrawler crawler = new WikiCrawler.Builder(wikipedia,repository)
                 .setShutDownOnEarlyStop(true)
@@ -135,12 +140,13 @@ public class WikiCrawler {
     }
 
     private static void fileTest() throws MalformedURLException, InterruptedException {
-        LinkService repository = new LinkService(new HashMapLinkRepository());
-        Wikipedia wikipedia = new Wikipedia(repository, new HashMapPageRepository());
+        LinkService repository = new LinkService(new HashMapLinkRepository(new AtomicIntCounter()), 100);
+        repository.setTimeBetweenUpdates(Duration.of(30, ChronoUnit.SECONDS));
+        Wikipedia wikipedia = new Wikipedia(repository, new HashMapPageRepository(new AtomicIntCounter()));
 
         WikiCrawler crawler = new WikiCrawler.Builder(wikipedia,repository)
                 .setShutDownOnEarlyStop(true)
-                .setShutDownOnSize(true)
+                .setShutDownOnSize(false)
                 .setConsumers(1)
                 .setProducers(1)
                 .setAnalyzer(new WikiAnalyzerFactory())
@@ -153,8 +159,8 @@ public class WikiCrawler {
     }
 
     private static void updateTest() throws IOException, InterruptedException {
-        LinkService repository = new LinkService(new HashMapLinkRepository());
-        Wikipedia wikipedia = new Wikipedia(repository, new HashMapPageRepository());
+        LinkService repository = new LinkService(new HashMapLinkRepository(new AtomicIntCounter()), 3);
+        Wikipedia wikipedia = new Wikipedia(repository, new HashMapPageRepository(new AtomicIntCounter()));
         repository.setTimeBetweenUpdates(Duration.ZERO);
 
         TestDocumentFetcher fetcher = getTest1();
@@ -253,8 +259,11 @@ public class WikiCrawler {
 
         this.noOfProducers = builder.producers;
         this.noOfConsumers = builder.consumers;
+        this.noOfUpdaters = builder.updaters;
+
         this.consumers = new ArrayList<>();
         this.producers = new ArrayList<>();
+        this.updaters = new ArrayList<>();
 
         this.updatesUntilCalculation = builder.updatesUntilCalculation;
         this.createsUntilCalculation = builder.createsUntilCalculation;
@@ -277,7 +286,7 @@ public class WikiCrawler {
         this.isShutDown = false;
         this.awaitLatch = new CountDownLatch(1);
 
-        this.executors = Executors.newFixedThreadPool(noOfProducers + noOfConsumers);
+        this.executors = Executors.newFixedThreadPool(noOfProducers + noOfConsumers + noOfUpdaters);
         this.urls = new LinkedBlockingDeque<>();
         this.fetched = new ArrayBlockingQueue<>(builder.documentMaxCapacity);
     }
@@ -295,7 +304,7 @@ public class WikiCrawler {
         }
 
         for (int i = 0; i < noOfProducers; i++) {
-            WikiProducer producer = new WikiProducer(i, wikipedia, this, fetcher);
+            WikiProducer producer = new WikiProducer(i, this, fetcher);
             this.producers.add(producer);
             this.executors.submit(producer);
         }
@@ -308,7 +317,21 @@ public class WikiCrawler {
     }
 
     public void addFetched(FetchResult document) throws InterruptedException {
-        fetched.add(Poisonable.item(document));
+        WikiLink link = document.getWikiLink();
+        switch (document.getStatus()) {
+            case SUCCESS -> {
+                debug("Fetched "+document.getWikiLink().getLink());
+                fetched.add(Poisonable.item(document));
+            } case DOES_NOT_EXIST -> {
+                unlink(link);
+            } case CONNECTION_ERROR -> {
+                debug("Connection Error when fetching '"+link.getLink()+"'");
+                stash(link);
+            } default -> {
+                throw new IllegalStateException();
+            }
+        }
+
     }
 
     public Poisonable<FetchResult> nextFetched() throws InterruptedException {
@@ -332,6 +355,17 @@ public class WikiCrawler {
         if (shutdownOnSize && size == 0) {
             debug("Shutting down - no more pages");
             shutdown();
+        } else if(size==0) {
+            debug("Releasing Updaters - no more pages");
+            releaseUpdaters();
+        }
+    }
+
+    private void releaseUpdaters() {
+        for(int i=0;i<noOfUpdaters;i++) {
+            UpdateWorker worker = new UpdateWorker(i, linkService,this);
+            updaters.add(worker);
+            executors.submit(worker);
         }
     }
 
@@ -459,6 +493,8 @@ public class WikiCrawler {
         for(CrawlableLink link : registeredLinks) {
             addLink(link);
         }
+
+        linkService.update(registeredLinks);
     }
 
     //adds an indexed link
@@ -490,12 +526,21 @@ public class WikiCrawler {
         return Collections.unmodifiableList(producers);
     }
 
+    public void addURL(WikiLink link) {
+        urls.add(Poisonable.item(link));
+    }
+
+    public boolean isShutDown() {
+        return isShutDown;
+    }
+
 
     public static class Builder {
         private final Wikipedia wikipedia;
         private final LinkService linkService;
         private int producers;
         private int consumers;
+        private int updaters;
 
         private int earlyStop;
         private boolean shutDownOnEarlyStop;
@@ -516,6 +561,7 @@ public class WikiCrawler {
             //recommended ratio -  60:1
             this.producers = 60;
             this.consumers = 1;
+            this.updaters = 1;
             this.earlyStop = -1;
 
             this.shutDownOnEarlyStop = false;
@@ -634,6 +680,15 @@ public class WikiCrawler {
 
         public Builder setUpdatesUntilCalculation(int updatesUntilCalculation) {
             this.updatesUntilCalculation = updatesUntilCalculation;
+            return this;
+        }
+
+        public int getUpdaters() {
+            return updaters;
+        }
+
+        public Builder setUpdaters(int updaters) {
+            this.updaters = updaters;
             return this;
         }
 

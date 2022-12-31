@@ -62,10 +62,6 @@ public class WikiLink {
         return paths.get(locale);
     }
 
-    public boolean isMainPage() {
-        return getRelative().equals("/wiki/Main_Page");
-    }
-
     @Override
     public String toString() {
         return getLink().toString();

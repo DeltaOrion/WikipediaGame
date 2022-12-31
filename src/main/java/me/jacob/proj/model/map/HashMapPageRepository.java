@@ -1,11 +1,11 @@
-package me.jacob.proj.model.page;
+package me.jacob.proj.model.map;
 
 import me.jacob.proj.model.PageRepository;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
+import me.jacob.proj.util.IDCounter;
 
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
@@ -16,14 +16,14 @@ public class HashMapPageRepository implements PageRepository {
     private final Map<String, WikiPage> byName;
     private final Map<Integer, WikiPage> byId;
     private final ReadWriteLock lock;
+    private final IDCounter idCounter;
 
-    private final AtomicInteger pageCount = new AtomicInteger(0);
-
-    public HashMapPageRepository() {
+    public HashMapPageRepository(IDCounter idCounter) {
         this.byLink = new HashMap<>();
         this.byName = new HashMap<>();
         this.byId = new HashMap<>();
         this.lock = new ReentrantReadWriteLock();
+        this.idCounter = idCounter;
     }
 
     @Override
@@ -122,7 +122,7 @@ public class HashMapPageRepository implements PageRepository {
 
     @Override
     public int nextUniqueId() {
-        return pageCount.getAndIncrement();
+        return idCounter.nextUniqueId();
     }
 
     private void clear() {
