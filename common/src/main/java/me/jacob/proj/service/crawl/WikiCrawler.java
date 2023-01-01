@@ -51,13 +51,8 @@ public class WikiCrawler {
     private int indexed;
 
     private final int createsUntilBulkPublish;
-    private final int createsUntilCalculation;
-    private final int updatesUntilCalculation;
 
     private int createsSinceLastPublish;
-    private int createsSinceLastCalculation;
-    private int updatesSinceLastCalculation;
-    private final ConcurrentMap<WikiPage, Object> toCalculate;
 
     private final boolean shutdownOnSize;
     private final boolean shutDownOnEarlyStop;
@@ -179,7 +174,6 @@ public class WikiCrawler {
                 .setAnalyzer(new TestAnalyzerFactory())
                 .setFetcher(fetcher)
                 .setCreatesUntilBulkPublish(3)
-                .setCreatesUntilCalculation(3)
                 .build();
 
         crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/1")));
@@ -250,7 +244,6 @@ public class WikiCrawler {
         }
 
         try {
-            wikipedia.calculateAllShortestPaths();
             System.out.println(wikipedia.getShortestPaths("Black hole", "Ultra-high-energy cosmic ray"));
         } catch (Throwable e) {
             e.printStackTrace();
@@ -269,14 +262,9 @@ public class WikiCrawler {
         this.producers = new ArrayList<>();
         this.updaters = new ArrayList<>();
 
-        this.updatesUntilCalculation = builder.updatesUntilCalculation;
-        this.createsUntilCalculation = builder.createsUntilCalculation;
         this.createsUntilBulkPublish = builder.createsUntilBulkPublish;
 
-        this.toCalculate = new ConcurrentHashMap<>();
-        this.createsSinceLastCalculation = 0;
         this.createsSinceLastPublish = 0;
-        this.updatesSinceLastCalculation = 0;
 
         this.earlyStop = builder.earlyStop;
 
@@ -367,7 +355,6 @@ public class WikiCrawler {
         } else if (!releasedUpdaters && size == 0) {
             releasedUpdaters = true;
             debug("Releasing Updaters - no more pages");
-            calculateAll();
             releaseUpdaters();
         }
     }
@@ -390,7 +377,6 @@ public class WikiCrawler {
         stopWorkers();
 
         wikipedia.publishBulkCreate();
-        calculateAll();
         deregisterLinks();
 
         awaitLatch.countDown();
@@ -410,14 +396,6 @@ public class WikiCrawler {
         }
     }
 
-    private void calculateAll() {
-        debug("Calculating shortest paths");
-        Iterator<WikiPage> pages = toCalculate.keySet().iterator();
-        while (pages.hasNext()) {
-            wikipedia.updatePaths(pages.next());
-            pages.remove();
-        }
-    }
 
     private void await() throws InterruptedException {
         awaitLatch.await();
@@ -444,52 +422,27 @@ public class WikiCrawler {
                 links);
 
         addLinks(l);
-        if (l.size() > 0)
-            toCalculate.put(original, new Object());
 
-        boolean doCalculation = false;
         synchronized (this) {
             shrinkSize();
             incrementPages();
-
-            updatesSinceLastCalculation++;
-            if (updatesSinceLastCalculation >= updatesUntilCalculation) {
-                updatesSinceLastCalculation = 0;
-                doCalculation = true;
-            }
         }
 
-        if (doCalculation) {
-
-            calculateAll();
-        }
     }
 
     public void create(WikiPage page, Collection<WikiLink> links) throws InterruptedException {
         addLinks(wikipedia.bulkCreate(page, links));
-        toCalculate.put(page, new Object());
         boolean publishUpdate = false;
-        boolean doCalculation = false;
         synchronized (this) {
             createsSinceLastPublish++;
-            createsSinceLastCalculation++;
 
             if (createsSinceLastPublish >= createsUntilBulkPublish) {
-                createsSinceLastCalculation = 0;
+                createsSinceLastPublish = 0;
                 publishUpdate = true;
-            }
-
-            if (createsSinceLastCalculation >= createsUntilCalculation) {
-                createsSinceLastCalculation = 0;
-                doCalculation = true;
             }
 
             shrinkSize();
             incrementPages();
-        }
-
-        if (doCalculation) {
-            calculateAll();
         }
 
         if (publishUpdate)
@@ -545,6 +498,9 @@ public class WikiCrawler {
     }
 
     public void addURL(WikiLink link) {
+        synchronized (this) {
+            size++;
+        }
         urls.add(Poisonable.item(link));
     }
 
@@ -569,8 +525,6 @@ public class WikiCrawler {
 
         private int documentMaxCapacity;
         private int createsUntilBulkPublish;
-        private int createsUntilCalculation;
-        private int updatesUntilCalculation;
 
         public Builder(Wikipedia wikipedia, LinkService linkService) {
             this.wikipedia = wikipedia;
@@ -587,8 +541,6 @@ public class WikiCrawler {
             this.documentMaxCapacity = 1000;
 
             this.createsUntilBulkPublish = 1000;
-            this.createsUntilCalculation = 10000;
-            this.updatesUntilCalculation = 100;
 
             this.fetcher = new WebDocumentFetcher();
             this.analyzer = new WikiAnalyzerFactory();
@@ -683,23 +635,6 @@ public class WikiCrawler {
             return this;
         }
 
-        public int getCreatesUntilCalculation() {
-            return createsUntilCalculation;
-        }
-
-        public Builder setCreatesUntilCalculation(int createsUntilCalculation) {
-            this.createsUntilCalculation = createsUntilCalculation;
-            return this;
-        }
-
-        public int getUpdatesUntilCalculation() {
-            return updatesUntilCalculation;
-        }
-
-        public Builder setUpdatesUntilCalculation(int updatesUntilCalculation) {
-            this.updatesUntilCalculation = updatesUntilCalculation;
-            return this;
-        }
 
         public int getUpdaters() {
             return updaters;

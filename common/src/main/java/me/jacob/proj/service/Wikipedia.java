@@ -22,52 +22,58 @@ public class Wikipedia {
 
     /**
      * TODO
-     *   - Persistence
-     *       - Create Neo4j data persistence solution
-     *       - Lazy Loading for wikipages
-     *    Performance *
-     *      - Stop precalculating all of the shortest paths and instead calculate it on demand using Neo4j or a BFS search
-     *    Services
-     *    - add UpdateWorkers which crawl through link repository
-     *    - UpdateWorkers are released when the process is finished
-     *    Controllers
-     *    - Find CLI library.
-     *    - Start by adding CLI controllers and views
+     *   - Model
+     *       - Create Neo4j or SQL data persistence solution
+     *       - Lazy Loading for WikiPages neighbours
+        - Controllers
+            - Continue making commands
+            - Commands which allow pages to be indexed
+            - More options from the crawler, such as turning on and off debug mode
+            - Add web front end. The front-end should be super simple and only capable of viewing
+            pages and the path between them.
+            - Web front end should launch a CLI and register some of its own commands
+            - Display the actual graph
+        - Configuration
+            - Add a configuration for the crawler and link-service
+            - Configuration should be a YAML config.
+        Views
+            - Display the graph of all the paths in the front-end
+            - Add colours to the CLI
+        - Logging
+            - Add proper logging framework which also stores logs to a file
      */
 
     public static void main(String[] args) {
         LinkService service = new LinkService(new HashMapLinkRepository(new AtomicIntCounter()), 3);
         Wikipedia wikipedia = new Wikipedia(service, new HashMapPageRepository(new AtomicIntCounter()));
-        WikiPage one = new WikiPage("0",new WikiLink("1"));
-        WikiPage two = new WikiPage("1",new WikiLink("2"));
-        WikiPage three = new WikiPage("2",new WikiLink("3"));
-        WikiPage four = new WikiPage("3",new WikiLink("4"));
-        WikiPage five = new WikiPage("4",new WikiLink("5"));
+        WikiPage zero = new WikiPage("0",new WikiLink("0"));
+        WikiPage one = new WikiPage("1",new WikiLink("1"));
+        WikiPage two = new WikiPage("2",new WikiLink("2"));
+        WikiPage three = new WikiPage("3",new WikiLink("3"));
+        WikiPage four = new WikiPage("4",new WikiLink("4"));
 
-        one.addNeighbour(two);
+        zero.addNeighbour(one);
+        zero.addNeighbour(two);
+        zero.addNeighbour(four);
+
         one.addNeighbour(three);
-        one.addNeighbour(five);
+        one.addNeighbour(two);
 
-        two.addNeighbour(four);
         two.addNeighbour(three);
+        two.addNeighbour(zero);
 
         three.addNeighbour(four);
-        three.addNeighbour(one);
 
-        four.addNeighbour(five);
-        five.addNeighbour(four);
+        four.addNeighbour(three);
+        four.addNeighbour(zero);
 
-        five.addNeighbour(one);
-
+        wikipedia.create(zero);
         wikipedia.create(one);
         wikipedia.create(two);
         wikipedia.create(three);
         wikipedia.create(four);
-        wikipedia.create(five);
 
-
-        wikipedia.calculateAllShortestPaths();
-        four.setRemoved(true);
+        three.setRemoved(true);
         System.out.println(wikipedia.getShortestPaths("2","4"));
     }
 
@@ -83,97 +89,15 @@ public class Wikipedia {
         WikiPage A = getPage(a);
         WikiPage B = getPage(b);
 
-
-
         return getShortestPaths(A,B);
     }
 
-    public List<List<WikiPage>> getShortestPaths(WikiPage A, WikiPage B) {
-        if(A == null || B == null)
+    public List<List<WikiPage>> getShortestPaths(WikiPage start, WikiPage end) {
+        if(start == null || end == null)
             return new ArrayList<>();
 
-        List<List<WikiPage>> result = new ArrayList<>();
-        List<WikiPage> currPath = new ArrayList<>();
-        currPath.add(B);
-        getShortestPaths(A,B,result,currPath);
-        return result;
-    }
-
-    private void getShortestPaths(WikiPage A, WikiPage B, List<List<WikiPage>> result, List<WikiPage> currPath) {
-        if(A.equals(B)) {
-            List<WikiPage> path = new ArrayList<>();
-            for(int i=currPath.size()-1;i>=0;i--) {
-                path.add(currPath.get(i));
-            }
-            result.add(path);
-        } else {
-            //this hasn't been indexed yet! - Stop
-            //if(B.getUniqueId() > A.getAllPairShortest().size())
-            //    return;
-
-            //this node has been removed, don't include it when finding the paths
-            if(B.isRemoved())
-                return;
-
-            for(WikiPage path : A.getAllPairShortest().get(B.getUniqueId())) {
-                currPath.add(path);
-                getShortestPaths(A,path,result,currPath);
-                currPath.remove(currPath.size()-1);
-            }
-        }
-    }
-
-    public void calculateAllShortestPaths() {
-        try {
-            for (WikiPage page : repository.getAllPages()) {
-                updatePaths(page);
-            }
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    public void updatePaths(WikiPage page) {
-        Queue<WikiPage> queue = new ArrayDeque<>();
-        int noOfPages = size();
-        boolean[] visited = new boolean[noOfPages];
-        visited[page.getUniqueId()] = true;
-        queue.add(page);
-
-        List<List<WikiPage>> allPairs = page.getAllPairShortest();
-        allPairs.clear();
-
-        for(int i = 0; i< noOfPages; i++) {
-            allPairs.add(new ArrayList<>());
-        }
-
-        allPairs.get(page.getUniqueId()).add(page);
-
-        while (!queue.isEmpty()) {
-            int size = queue.size();
-            boolean[] thisLayer = new boolean[visited.length];
-            for(int i=0;i<size;i++) {
-                WikiPage node = queue.poll();
-                for(WikiPage neighbour : node.getNeighbours()) {
-                    //we want the node to add itself to the list for all of its neighbours if either
-                    //the node is unvisited or if it has been visited, it was added in this layer!
-                    //if(neighbour.getUniqueId() < node.getNeighbours().size()) {
-                    if(!visited[neighbour.getUniqueId()]) {
-                        allPairs.get(neighbour.getUniqueId()).add(node);
-                        queue.add(neighbour);
-                        visited[neighbour.getUniqueId()] = true;
-                        thisLayer[neighbour.getUniqueId()] = true;
-                    } else if(thisLayer[neighbour.getUniqueId()]) {
-                        //otherwise if it was added on this layer then add itself to the list.
-                        allPairs.get(neighbour.getUniqueId()).add(node);
-                    }
-                    //}
-                }
-            }
-        }
-
-        repository.savePage(page);
+        ShortestPathStrategy strategy = new BFSShortestPathStrategy();
+        return strategy.getShortestPaths(start,end);
     }
 
 

@@ -16,15 +16,10 @@ public class WikiPage {
 
     private boolean isRemoved;
 
-    //path data
-    private final List<List<WikiPage>> allPairShortest;
-
     public WikiPage(String title, WikiLink link) {
         this.link = link;
         this.neighbours = new ArrayList<>();
         this.title = title;
-
-        this.allPairShortest = new ArrayList<>();
     }
 
     public String getTitle() {
@@ -49,10 +44,6 @@ public class WikiPage {
 
     public WikiLink getLink() {
         return link;
-    }
-
-    public List<List<WikiPage>> getAllPairShortest() {
-        return allPairShortest;
     }
 
     public int getUniqueId() {
@@ -113,6 +104,5 @@ public class WikiPage {
 
     public synchronized void clearNeighbours() {
         this.neighbours.clear();
-        this.allPairShortest.clear();
     }
 }

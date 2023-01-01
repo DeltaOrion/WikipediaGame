@@ -22,9 +22,6 @@ public class WikipediaCommand extends Command {
     @CommandLine.Option(names = {"-p"}, description = "Toggle to find the shortest path between two pages")
     private boolean findPath;
 
-    @CommandLine.Option(names = {"-c"}, description = "Forces the path calculation on the selected paths")
-    private boolean calculate;
-
     private final static Pattern UNDERSCORE_PATTERN = Pattern.compile("_");
 
     private final DisplayWikiView view;
@@ -52,12 +49,6 @@ public class WikipediaCommand extends Command {
     }
 
     private void wikiMode() {
-        if(calculate) {
-            System.out.println("Calculating all paths");
-            game.getPageService().calculateAllShortestPaths();
-            return;
-        }
-
         System.out.println("---- oO Wikipedia Oo ----");
         view.displayPages(game.getPageService());
     }
@@ -67,12 +58,6 @@ public class WikipediaCommand extends Command {
         Collection<WikiPage> pages = getPagesFromArgs();
         if(pages.size()==0)
             return;
-
-        if(calculate) {
-            System.out.println("Calculating selected paths");
-            calculatePaths(pages);
-            display = false;
-        }
 
         if(findPath) {
             findPaths(pages);
@@ -95,12 +80,6 @@ public class WikipediaCommand extends Command {
             }
         }
         return wikiPages;
-    }
-
-    private void calculatePaths(Collection<WikiPage> pages) {
-        for(WikiPage page : pages) {
-            game.getPageService().updatePaths(page);
-        }
     }
 
     private void findPaths(Collection<WikiPage> pages) {
