@@ -4,18 +4,19 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>me.jacob.proj</groupId>
-    <artifactId>WikipediaGame</artifactId>
+    <parent>
+        <groupId>me.jacob.proj</groupId>
+        <artifactId>WikipediaGame</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>common</artifactId>
     <version>1.0-SNAPSHOT</version>
-    <packaging>pom</packaging>
+    <packaging>jar</packaging>
 
-    <name>WikipediaGame</name>
-    <description>Program for indexing wikipedia to complete the wikipedia game</description>
+    <name>common</name>
+    <description>Common library needed to run the wikipedia game</description>
 
-    <modules>
-        <module>common</module>
-        <module>cli</module>
-    </modules>
 
     <build>
         <plugins>
@@ -34,15 +35,5 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
     </properties>
-
-    <dependencies>
-        <!-- https://mvnrepository.com/artifact/org.jsoup/jsoup -->
-        <dependency>
-            <groupId>org.jsoup</groupId>
-            <artifactId>jsoup</artifactId>
-            <version>1.15.3</version>
-        </dependency>
-
-    </dependencies>
 
 </project>

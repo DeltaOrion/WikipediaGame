@@ -1,8 +1,13 @@
 package me.jacob.proj.service.crawl;
 
+import me.jacob.proj.model.CrawlableLink;
+import me.jacob.proj.model.WikiLink;
+import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.model.map.HashMapLinkRepository;
 import me.jacob.proj.model.map.HashMapPageRepository;
+import me.jacob.proj.service.LinkService;
 import me.jacob.proj.service.UpdateWorker;
+import me.jacob.proj.service.Wikipedia;
 import me.jacob.proj.service.crawl.analysis.factory.AnalyzerFactory;
 import me.jacob.proj.service.crawl.analysis.factory.TestAnalyzerFactory;
 import me.jacob.proj.service.crawl.analysis.factory.WikiAnalyzerFactory;
@@ -10,9 +15,6 @@ import me.jacob.proj.service.crawl.fetch.DocumentFetcher;
 import me.jacob.proj.service.crawl.fetch.FileDocumentFetcher;
 import me.jacob.proj.service.crawl.fetch.TestDocumentFetcher;
 import me.jacob.proj.service.crawl.fetch.WebDocumentFetcher;
-import me.jacob.proj.model.*;
-import me.jacob.proj.service.LinkService;
-import me.jacob.proj.service.Wikipedia;
 import me.jacob.proj.util.AtomicIntCounter;
 import me.jacob.proj.util.Poisonable;
 import me.jacob.proj.util.TestPage;
@@ -25,6 +27,7 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.logging.Logger;
 
 public class WikiCrawler {
 
@@ -54,11 +57,12 @@ public class WikiCrawler {
     private int createsSinceLastPublish;
     private int createsSinceLastCalculation;
     private int updatesSinceLastCalculation;
-    private final ConcurrentMap<WikiPage,Object> toCalculate;
+    private final ConcurrentMap<WikiPage, Object> toCalculate;
 
     private final boolean shutdownOnSize;
     private final boolean shutDownOnEarlyStop;
 
+    private boolean releasedUpdaters;
     private boolean isShutDown;
     private final CountDownLatch awaitLatch;
 
@@ -73,9 +77,9 @@ public class WikiCrawler {
 
     private static void performanceTest() throws MalformedURLException, InterruptedException {
         LinkService repository = new LinkService(new HashMapLinkRepository(new AtomicIntCounter()), 100);
-        Wikipedia wikipedia = new Wikipedia(repository,new HashMapPageRepository(new AtomicIntCounter()));
+        Wikipedia wikipedia = new Wikipedia(repository, new HashMapPageRepository(new AtomicIntCounter()));
 
-        WikiCrawler crawler = new WikiCrawler.Builder(wikipedia,repository)
+        WikiCrawler crawler = new WikiCrawler.Builder(wikipedia, repository)
                 .setShutDownOnEarlyStop(true)
                 .setShutDownOnSize(true)
                 .setEarlyStop(1000)
@@ -92,37 +96,37 @@ public class WikiCrawler {
         long division = 1000000;
 
         String tableFormat = "%-12s %-25s %-25s\n";
-        System.out.printf(tableFormat,"Consumer","Total Time Starved","Average Time Starved");
+        System.out.printf(tableFormat, "Consumer", "Total Time Starved", "Average Time Starved");
         System.out.println("--------------------------------------------------------------");
         long starvationTotal = 0;
         int consumedTotal = 0;
-        for(WikiConsumer consumer : crawler.getConsumers()) {
+        for (WikiConsumer consumer : crawler.getConsumers()) {
             starvationTotal += consumer.getTotalStarvationTime();
             consumedTotal += consumer.getConsumed();
-            System.out.printf("%-12d %-25d %-25.2f\n",consumer.getId(),consumer.getTotalStarvationTime()/division,((float)consumer.getTotalStarvationTime())/(consumer.getConsumed()*division));
+            System.out.printf("%-12d %-25d %-25.2f\n", consumer.getId(), consumer.getTotalStarvationTime() / division, ((float) consumer.getTotalStarvationTime()) / (consumer.getConsumed() * division));
         }
 
         starvationTotal /= crawler.getConsumers().size();
         consumedTotal /= crawler.getConsumers().size();
 
-        System.out.printf("%-12s %-25d %-25.2f\n","Total",starvationTotal/division,((float)starvationTotal)/(consumedTotal*division));
+        System.out.printf("%-12s %-25d %-25.2f\n", "Total", starvationTotal / division, ((float) starvationTotal) / (consumedTotal * division));
         System.out.println();
-        System.out.printf("%-12s %-25s %-30s %-25s %-30s\n","Producer","Total Time Starved","Average Time Starved","Total Time Blocked","Average Time Blocked");
+        System.out.printf("%-12s %-25s %-30s %-25s %-30s\n", "Producer", "Total Time Starved", "Average Time Starved", "Total Time Blocked", "Average Time Blocked");
         System.out.println("--------------------------------------------------------------");
         starvationTotal = 0;
         consumedTotal = 0;
         long blockedTotal = 0;
         int placedTotal = 0;
-        for(WikiProducer producer : crawler.getProducers()) {
+        for (WikiProducer producer : crawler.getProducers()) {
             starvationTotal += producer.getTotalStarvationTime();
             consumedTotal += producer.getFetched();
             blockedTotal += producer.getTotalBlockedTime();
             placedTotal += producer.getPlaced();
 
-            System.out.printf("%-12d %-25d %-30.2f %-25d %-30.2f\n",producer.getId(),producer.getTotalStarvationTime()/division,
-                    ((float)producer.getTotalStarvationTime())/(producer.getFetched()*division),
-                    producer.getTotalBlockedTime()/division,
-                    ((float)producer.getTotalBlockedTime())/(producer.getPlaced())*division);
+            System.out.printf("%-12d %-25d %-30.2f %-25d %-30.2f\n", producer.getId(), producer.getTotalStarvationTime() / division,
+                    ((float) producer.getTotalStarvationTime()) / (producer.getFetched() * division),
+                    producer.getTotalBlockedTime() / division,
+                    ((float) producer.getTotalBlockedTime()) / (producer.getPlaced()) * division);
         }
 
         starvationTotal /= crawler.getProducers().size();
@@ -131,12 +135,12 @@ public class WikiCrawler {
         blockedTotal /= crawler.getProducers().size();
         consumedTotal /= crawler.getProducers().size();
 
-        System.out.printf("%-12s %-25d %-30.2f %-25d %-30.2f\n","total",starvationTotal/division,
-                ((float)starvationTotal)/(consumedTotal*division),
-                blockedTotal/division,
-                ((float)blockedTotal)/(placedTotal)*division);
+        System.out.printf("%-12s %-25d %-30.2f %-25d %-30.2f\n", "total", starvationTotal / division,
+                ((float) starvationTotal) / (consumedTotal * division),
+                blockedTotal / division,
+                ((float) blockedTotal) / (placedTotal) * division);
 
-        System.out.println("Total Time Elapsed: "+(after-before));
+        System.out.println("Total Time Elapsed: " + (after - before));
     }
 
     private static void fileTest() throws MalformedURLException, InterruptedException {
@@ -144,7 +148,7 @@ public class WikiCrawler {
         repository.setTimeBetweenUpdates(Duration.of(30, ChronoUnit.SECONDS));
         Wikipedia wikipedia = new Wikipedia(repository, new HashMapPageRepository(new AtomicIntCounter()));
 
-        WikiCrawler crawler = new WikiCrawler.Builder(wikipedia,repository)
+        WikiCrawler crawler = new WikiCrawler.Builder(wikipedia, repository)
                 .setShutDownOnEarlyStop(true)
                 .setShutDownOnSize(false)
                 .setConsumers(1)
@@ -167,7 +171,7 @@ public class WikiCrawler {
         TestPage five = fetcher.getPage("5");
         five.addLink("8");
 
-        WikiCrawler crawler = new WikiCrawler.Builder(wikipedia,repository)
+        WikiCrawler crawler = new WikiCrawler.Builder(wikipedia, repository)
                 .setShutDownOnEarlyStop(true)
                 .setShutDownOnSize(true)
                 .setConsumers(1)
@@ -203,7 +207,7 @@ public class WikiCrawler {
         System.out.println(wikiPage.getNeighbours());
         System.out.println("----------------");
 
-        crawler = new WikiCrawler.Builder(wikipedia,repository)
+        crawler = new WikiCrawler.Builder(wikipedia, repository)
                 .setShutDownOnEarlyStop(true)
                 .setShutDownOnSize(true)
                 .setConsumers(1)
@@ -228,8 +232,8 @@ public class WikiCrawler {
     private static TestDocumentFetcher getTest1() throws IOException {
         TestDocumentFetcher fetcher = new TestDocumentFetcher();
         File directory = new File("testpages").toPath().resolve("b").toFile();
-        for(File file : directory.listFiles()) {
-            if(file.getName().endsWith(".txt")) {
+        for (File file : directory.listFiles()) {
+            if (file.getName().endsWith(".txt")) {
                 fetcher.addPage(TestPage.fromFile(file));
             }
         }
@@ -289,10 +293,12 @@ public class WikiCrawler {
         this.executors = Executors.newFixedThreadPool(noOfProducers + noOfConsumers + noOfUpdaters);
         this.urls = new LinkedBlockingDeque<>();
         this.fetched = new ArrayBlockingQueue<>(builder.documentMaxCapacity);
+
+        this.releasedUpdaters = false;
     }
 
     public void start(WikiLink startURL) throws InterruptedException {
-        if(isShutDown)
+        if (isShutDown)
             throw new IllegalStateException("Wiki Crawler has shut down");
 
         size = 1;
@@ -320,14 +326,17 @@ public class WikiCrawler {
         WikiLink link = document.getWikiLink();
         switch (document.getStatus()) {
             case SUCCESS -> {
-                debug("Fetched "+document.getWikiLink().getLink());
+                debug("Fetched " + document.getWikiLink().getLink());
                 fetched.add(Poisonable.item(document));
-            } case DOES_NOT_EXIST -> {
+            }
+            case DOES_NOT_EXIST -> {
                 unlink(link);
-            } case CONNECTION_ERROR -> {
-                debug("Connection Error when fetching '"+link.getLink()+"'");
+            }
+            case CONNECTION_ERROR -> {
+                debug("Connection Error when fetching '" + link.getLink() + "'");
                 stash(link);
-            } default -> {
+            }
+            default -> {
                 throw new IllegalStateException();
             }
         }
@@ -355,22 +364,24 @@ public class WikiCrawler {
         if (shutdownOnSize && size == 0) {
             debug("Shutting down - no more pages");
             shutdown();
-        } else if(size==0) {
+        } else if (!releasedUpdaters && size == 0) {
+            releasedUpdaters = true;
             debug("Releasing Updaters - no more pages");
+            calculateAll();
             releaseUpdaters();
         }
     }
 
     private void releaseUpdaters() {
-        for(int i=0;i<noOfUpdaters;i++) {
-            UpdateWorker worker = new UpdateWorker(i, linkService,this);
+        for (int i = 0; i < noOfUpdaters; i++) {
+            UpdateWorker worker = new UpdateWorker(i, linkService, this);
             updaters.add(worker);
             executors.submit(worker);
         }
     }
 
     public void shutdown() {
-        if(isShutDown)
+        if (isShutDown)
             return;
 
         isShutDown = true;
@@ -389,9 +400,9 @@ public class WikiCrawler {
         Iterator<Poisonable<WikiLink>> links = urls.iterator();
         while (links.hasNext()) {
             Poisonable<WikiLink> taken = links.next();
-            if(!taken.isPoisoned()) {
-                CrawlableLink link =  linkService.get(taken.getItem());
-                if(link!=null) {
+            if (!taken.isPoisoned()) {
+                CrawlableLink link = linkService.get(taken.getItem());
+                if (link != null) {
                     link.setRegistered(false);
                 }
                 links.remove();
@@ -400,6 +411,7 @@ public class WikiCrawler {
     }
 
     private void calculateAll() {
+        debug("Calculating shortest paths");
         Iterator<WikiPage> pages = toCalculate.keySet().iterator();
         while (pages.hasNext()) {
             wikipedia.updatePaths(pages.next());
@@ -417,6 +429,10 @@ public class WikiCrawler {
 
         for (int i = 0; i < noOfProducers; i++)
             urls.push(Poisonable.poison());
+
+        for (int i = 0; i < noOfUpdaters; i++) {
+            updaters.get(i).stop();
+        }
     }
 
     public void update(WikiPage original, WikiPage newPage, Collection<WikiLink> links) throws InterruptedException {
@@ -428,8 +444,8 @@ public class WikiCrawler {
                 links);
 
         addLinks(l);
-        if(l.size()>0)
-            toCalculate.put(original,new Object());
+        if (l.size() > 0)
+            toCalculate.put(original, new Object());
 
         boolean doCalculation = false;
         synchronized (this) {
@@ -437,18 +453,20 @@ public class WikiCrawler {
             incrementPages();
 
             updatesSinceLastCalculation++;
-            if(updatesSinceLastCalculation >= updatesUntilCalculation) {
+            if (updatesSinceLastCalculation >= updatesUntilCalculation) {
                 updatesSinceLastCalculation = 0;
                 doCalculation = true;
             }
         }
 
-        if(doCalculation)
+        if (doCalculation) {
+
             calculateAll();
+        }
     }
 
     public void create(WikiPage page, Collection<WikiLink> links) throws InterruptedException {
-        addLinks(wikipedia.bulkCreate(page,links));
+        addLinks(wikipedia.bulkCreate(page, links));
         toCalculate.put(page, new Object());
         boolean publishUpdate = false;
         boolean doCalculation = false;
@@ -456,12 +474,12 @@ public class WikiCrawler {
             createsSinceLastPublish++;
             createsSinceLastCalculation++;
 
-            if(createsSinceLastPublish >= createsUntilBulkPublish) {
+            if (createsSinceLastPublish >= createsUntilBulkPublish) {
                 createsSinceLastCalculation = 0;
                 publishUpdate = true;
             }
 
-            if(createsSinceLastCalculation >= createsUntilCalculation) {
+            if (createsSinceLastCalculation >= createsUntilCalculation) {
                 createsSinceLastCalculation = 0;
                 doCalculation = true;
             }
@@ -470,13 +488,13 @@ public class WikiCrawler {
             incrementPages();
         }
 
-        if(doCalculation)
+        if (doCalculation) {
             calculateAll();
+        }
 
-        if(publishUpdate)
+        if (publishUpdate)
             wikipedia.publishBulkCreate();
     }
-
 
 
     private void incrementPages() {
@@ -490,7 +508,7 @@ public class WikiCrawler {
 
     private void addLinks(Collection<WikiLink> links) throws InterruptedException {
         Collection<CrawlableLink> registeredLinks = linkService.getOrMake(links);
-        for(CrawlableLink link : registeredLinks) {
+        for (CrawlableLink link : registeredLinks) {
             addLink(link);
         }
 
@@ -515,7 +533,7 @@ public class WikiCrawler {
     }
 
     private void debug(String line) {
-        System.out.println("[Crawler] "+line);
+        System.out.println("[Crawler] " + line);
     }
 
     public List<WikiConsumer> getConsumers() {

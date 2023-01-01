@@ -2,8 +2,9 @@ package me.jacob.proj.service.crawl;
 
 import me.jacob.proj.service.crawl.fetch.*;
 import me.jacob.proj.model.WikiLink;
-import me.jacob.proj.service.Wikipedia;
 import me.jacob.proj.util.Poisonable;
+
+import java.util.logging.Logger;
 
 public class WikiProducer implements Runnable {
 

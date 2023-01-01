@@ -59,7 +59,7 @@ public abstract class AbstractDocumentAnalyzer implements DocumentAnalyzer {
         if(split.length==2)
             return split[0];
 
-        return null;
+        return "Article";
     }
 
     protected void harvestLangs(WikiPage page, Element langs) throws MalformedPageException {

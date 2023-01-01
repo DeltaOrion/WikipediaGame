@@ -83,6 +83,12 @@ public class Wikipedia {
         WikiPage A = getPage(a);
         WikiPage B = getPage(b);
 
+
+
+        return getShortestPaths(A,B);
+    }
+
+    public List<List<WikiPage>> getShortestPaths(WikiPage A, WikiPage B) {
         if(A == null || B == null)
             return new ArrayList<>();
 

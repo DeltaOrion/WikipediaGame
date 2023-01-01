@@ -5,6 +5,8 @@ import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.service.Wikipedia;
 import me.jacob.proj.util.Poisonable;
 
+import java.util.logging.Logger;
+
 public class WikiConsumer implements Runnable {
 
     private final Wikipedia wikipedia;
@@ -90,7 +92,7 @@ public class WikiConsumer implements Runnable {
     }
 
     private void debug(String line) {
-        System.out.println("[Consumer "+id+"] "+line);
+        System.out.println ("[Consumer "+id+"] "+line);
     }
 
     public synchronized int getConsumed() {
