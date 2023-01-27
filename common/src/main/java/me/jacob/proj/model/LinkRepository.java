@@ -8,22 +8,20 @@ public interface LinkRepository {
 
     Collection<CrawlableLink> getOrMake(Collection<WikiLink> links);
 
-    void updateAll(Collection<CrawlableLink> links);
+    void updateAll(Collection<CrawlableLink> links, boolean updateConnected);
 
     CrawlableLink get(WikiLink link);
 
     Collection<CrawlableLink> getAll();
 
-    void update(CrawlableLink link);
+    void update(CrawlableLink link, boolean updateConnected);
 
     void create(CrawlableLink link);
 
     void delete(WikiLink link);
 
-    int nextUniqueId();
-
     int getAmountOfLinks();
 
-    Collection<CrawlableLink> getBetween(int minBlock, int maxBlock);
+    Collection<CrawlableLink> getBefore(long time);
 
 }

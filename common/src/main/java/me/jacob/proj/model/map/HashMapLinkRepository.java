@@ -2,42 +2,39 @@ package me.jacob.proj.model.map;
 
 import me.jacob.proj.model.CrawlableLink;
 import me.jacob.proj.model.LinkRepository;
+import me.jacob.proj.model.PageRepository;
 import me.jacob.proj.model.WikiLink;
-import me.jacob.proj.util.IDCounter;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 public class HashMapLinkRepository implements LinkRepository {
 
     private final ConcurrentMap<WikiLink, CrawlableLink> linkMap;
-    private final IDCounter idCounter;
+    private final PageRepository pageRepo;
 
-    public HashMapLinkRepository(IDCounter idCounter) {
+    public HashMapLinkRepository(PageRepository pageRepo) {
+        this.pageRepo = pageRepo;
         this.linkMap = new ConcurrentHashMap<>();
-        this.idCounter = idCounter;
     }
 
     @Override
     public CrawlableLink getOrMake(WikiLink link) {
-        return linkMap.computeIfAbsent(link, link1 -> new CrawlableLink(link1, idCounter.nextUniqueId()));
+        return linkMap.computeIfAbsent(link, link1 -> new CrawlableLink(link1, UUID.randomUUID(), pageRepo));
     }
 
     @Override
     public Collection<CrawlableLink> getOrMake(Collection<WikiLink> links) {
         List<CrawlableLink> found = new ArrayList<>();
         for(WikiLink link : links) {
-            found.add(linkMap.computeIfAbsent(link, link1 -> new CrawlableLink(link1, idCounter.nextUniqueId())));
+            found.add(linkMap.computeIfAbsent(link, link1 -> new CrawlableLink(link1, UUID.randomUUID(), pageRepo)));
         }
         return found;
     }
 
     @Override
-    public void updateAll(Collection<CrawlableLink> links) {
+    public void updateAll(Collection<CrawlableLink> links, boolean updateConnected) {
 
     }
 
@@ -52,7 +49,7 @@ public class HashMapLinkRepository implements LinkRepository {
     }
 
     @Override
-    public void update(CrawlableLink link) {
+    public void update(CrawlableLink link, boolean updateLinks) {
 
     }
 
@@ -66,10 +63,6 @@ public class HashMapLinkRepository implements LinkRepository {
         linkMap.remove(link);
     }
 
-    @Override
-    public int nextUniqueId() {
-        return idCounter.nextUniqueId();
-    }
 
     @Override
     public int getAmountOfLinks() {
@@ -77,13 +70,14 @@ public class HashMapLinkRepository implements LinkRepository {
     }
 
     @Override
-    public Collection<CrawlableLink> getBetween(int minBlock, int maxBlock) {
-        List<CrawlableLink> block = new ArrayList<>();
+    public Collection<CrawlableLink> getBefore(long time) {
+        List<CrawlableLink> links = new ArrayList<>();
         for(CrawlableLink link : getAll()) {
-            if(link.getUniqueId() >= minBlock && link.getUniqueId() <= maxBlock)
-                block.add(link);
+            if(link.getLastProcessed() < time) {
+                links.add(link);
+            }
         }
-
-        return block;
+        return links;
     }
+
 }

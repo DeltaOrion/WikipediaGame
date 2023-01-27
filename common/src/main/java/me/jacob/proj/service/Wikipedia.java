@@ -1,9 +1,6 @@
 package me.jacob.proj.service;
 
-import me.jacob.proj.model.CrawlableLink;
-import me.jacob.proj.model.PageRepository;
-import me.jacob.proj.model.WikiLink;
-import me.jacob.proj.model.WikiPage;
+import me.jacob.proj.model.*;
 import me.jacob.proj.model.map.HashMapLinkRepository;
 import me.jacob.proj.model.map.HashMapPageRepository;
 import me.jacob.proj.util.AtomicIntCounter;
@@ -23,8 +20,11 @@ public class Wikipedia {
     /**
      * TODO
      *   - Model
-     *       - Create Neo4j or SQL data persistence solution
-     *       - Lazy Loading for WikiPages neighbours
+     *       - Add Neo4jLinkRepository
+     *       - Create real bulk update for page creation
+     *       - Add way to match ignorecase for wikipages
+     *  - Service
+     *       - Use a better method for getting the lins that need to be updated
         - Controllers
             - Continue making commands
             - Commands which allow pages to be indexed
@@ -44,14 +44,30 @@ public class Wikipedia {
      */
 
     public static void main(String[] args) {
-        LinkService service = new LinkService(new HashMapLinkRepository(new AtomicIntCounter()), 3);
-        Wikipedia wikipedia = new Wikipedia(service, new HashMapPageRepository(new AtomicIntCounter()));
-        WikiPage zero = new WikiPage("0",new WikiLink("0"));
-        WikiPage one = new WikiPage("1",new WikiLink("1"));
-        WikiPage two = new WikiPage("2",new WikiLink("2"));
-        WikiPage three = new WikiPage("3",new WikiLink("3"));
-        WikiPage four = new WikiPage("4",new WikiLink("4"));
+        PageRepository repository = new HashMapPageRepository(new AtomicIntCounter());
+        LinkService service = new LinkService(new HashMapLinkRepository(repository), repository);
+        Wikipedia wikipedia = new Wikipedia(service, repository);
+        WikiPage zero = new WikiPage("0",new WikiLink("0"), repository);
+        WikiPage one = new WikiPage("1",new WikiLink("1"), repository);
+        WikiPage two = new WikiPage("2",new WikiLink("2"), repository);
+        WikiPage three = new WikiPage("3",new WikiLink("3"), repository);
+        WikiPage four = new WikiPage("4",new WikiLink("4"), repository);
+        WikiPage five = new WikiPage("5",new WikiLink("5"), repository);
+        WikiPage six = new WikiPage("6",new WikiLink("6"), repository);
 
+        zero.addNeighbour(one);
+        zero.addNeighbour(two);
+        zero.addNeighbour(three);
+        zero.addNeighbour(four);
+
+        one.addNeighbour(four);
+        two.addNeighbour(five);
+        three.addNeighbour(five);
+
+        five.addNeighbour(six);
+        four.addNeighbour(six);
+
+        /*
         zero.addNeighbour(one);
         zero.addNeighbour(two);
         zero.addNeighbour(four);
@@ -66,15 +82,19 @@ public class Wikipedia {
 
         four.addNeighbour(three);
         four.addNeighbour(zero);
+        */
+
 
         wikipedia.create(zero);
         wikipedia.create(one);
         wikipedia.create(two);
         wikipedia.create(three);
         wikipedia.create(four);
+        wikipedia.create(five);
+        wikipedia.create(six);
 
-        three.setRemoved(true);
-        System.out.println(wikipedia.getShortestPaths("2","4"));
+        //three.setRemoved(true);
+        System.out.println(wikipedia.getShortestPaths("0","0"));
     }
 
     public Wikipedia(LinkService linkService, PageRepository repository) {
@@ -100,11 +120,9 @@ public class Wikipedia {
         return strategy.getShortestPaths(start,end);
     }
 
-
-
     public Collection<WikiLink> bulkCreate(WikiPage page, Collection<WikiLink> linksFound) {
-        bulkCreate.createPage(page);
         page.setUniqueId(repository.nextUniqueId());
+        bulkCreate.createPage(page);
         UpdateStatus status = link(page,linksFound);
         this.toSave.put(status.getPageRegLink(),new Object());
         return status.getUnindexed();
@@ -112,19 +130,20 @@ public class Wikipedia {
 
     public void publishBulkCreate() {
         bulkCreate.clearAndDo(repository::createPages);
-        linkService.update(toSave.keySet());
+        linkService.update(toSave.keySet(),true);
         toSave.clear();
     }
     //we could also return a create status with more detailed information in the future
     public Collection<WikiLink> create(WikiPage page, Collection<WikiLink> linksFound) {
-        if(repository.getPage(page.getLink())!=null)
-            return new ArrayList<>();
-
-        UpdateStatus update = link(page,linksFound);
         page.setUniqueId(repository.nextUniqueId());
+        UpdateStatus update = link(page,linksFound);
         repository.createPage(page);
-        linkService.update(update.getPageRegLink());
+        linkService.update(update.getPageRegLink(),true);
         return update.getUnindexed();
+    }
+
+    public WikiPage newPage(String title, WikiLink link) {
+        return new WikiPage(title,link,repository);
     }
 
     public void create(WikiPage page) {
@@ -137,52 +156,88 @@ public class Wikipedia {
 
     //we could also return an update status with more detailed information in the future.
     public Collection<WikiLink> update(WikiPage page, String title, String description, boolean isRedirect, String articleType, Collection<WikiLink> linksFound) {
-        Collection<WikiLink> unindexed = updateLinks(page,linksFound);
-        updateTitle(page,title);
-        page.setDescription(description);
-        page.setRedirect(isRedirect);
-        page.setArticleType(articleType);
+        boolean update = false;
 
-        CrawlableLink link = linkService.get(page.getLink());
-        link.setProcessed(true);
+        UpdateStatus status = updateLinks(page,linksFound);
+        if(status.updateLinks)
+            update = true;
 
-        linkService.update(link);
-        repository.savePage(page);
-        return unindexed;
-    }
+        if(updateTitle(page,title))
+            update = true;
 
-    private void updateTitle(WikiPage page, String title) {
-        if(!page.getTitle().equals(title)) {
-            String oldTitle = page.getTitle();
-            page.setTitle(title);
-            repository.updateName(oldTitle,page);
-        }
-    }
-
-    private Collection<WikiLink> updateLinks(WikiPage page, Collection<WikiLink> linksFound) {
-        if(linksFound.size() == page.getNeighbours().size()) {
-            Set<WikiLink> linksSet = new HashSet<>(linksFound);
-            for(WikiPage p : page.getNeighbours()) {
-                linksSet.remove(p.getLink());
-            }
-
-            //the links are not the same, relink
-            if(linksSet.size()!=0) {
-                page.clearNeighbours();
-                return link(page,linksFound).getUnindexed();
-            }
+        if(!description.equals(page.getDescription())) {
+            page.setDescription(description);
+            update = true;
         }
 
-        return new ArrayList<>();
+        if(isRedirect != page.isRedirect()) {
+            page.setRedirect(isRedirect);
+            update = true;
+        }
+
+        if(!articleType.equals(page.getArticleType())) {
+            page.setArticleType(articleType);
+            update = true;
+        }
+
+
+
+        if(update) {
+            CrawlableLink link = status.getPageRegLink();
+            if(link!=null) {
+                linkService.update(link, status.updateLinks);
+                link.toggleProcessed(true);
+            }
+            repository.savePage(page,status.updateLinks);
+        }
+
+        return status.getUnindexed();
+    }
+
+    private boolean updateTitle(WikiPage page, String title) {
+        if(page.getTitle().equals(title))
+            return false;
+
+        String oldTitle = page.getTitle();
+        page.setTitle(title);
+        repository.updateName(oldTitle,page);
+        return true;
+    }
+
+    private UpdateStatus updateLinks(WikiPage page, Collection<WikiLink> linksFound) {
+        Collection<WikiPage> neighbours = page.getNeighbours();
+        if(linksFound.size() != neighbours.size()) {
+            page.clearNeighbours();
+            return link(page,linksFound);
+        }
+
+        Set<WikiLink> linksSet = new HashSet<>(linksFound);
+        for(WikiPage p : neighbours) {
+            linksSet.remove(p.getLink());
+        }
+
+        //the links are not the same, relink
+        if(linksSet.size()!=0) {
+            page.clearNeighbours();
+            return link(page,linksFound);
+        }
+
+        return new UpdateStatus(new ArrayList<>(),null,false);
     }
 
     private UpdateStatus link(WikiPage page, Collection<WikiLink> links) {
         CrawlableLink pageRegLink = linkService.getOrMake(page.getLink());
-        pageRegLink.setProcessed(true);
+        pageRegLink.toggleProcessed(true);
 
         List<WikiLink> unindexed = new ArrayList<>();
+        Collection<WikiPage> pages = getAll(links);
+        Map<WikiLink,WikiPage> byLink = new HashMap<>();
+        for(WikiPage p : pages) {
+            byLink.put(p.getLink(),p);
+        }
         for (WikiLink link : links) {
-            WikiPage pageLink = getPage(link);
+            //culprit method - blocking call made thousands of times
+            WikiPage pageLink = byLink.get(link);
             if (pageLink != null) {
                 page.addNeighbour(pageLink);
             } else {
@@ -193,14 +248,16 @@ public class Wikipedia {
             }
         }
 
-        for (WikiLink link : unindexed) {
-            CrawlableLink registered = linkService.getOrMake(link);
+        Collection<CrawlableLink> crawlableLinks = linkService.getOrMake(unindexed);
+        for(CrawlableLink registered : crawlableLinks) {
             registered.addUnconnected(page);
+            //these need to be saved
         }
 
+        linkService.update(crawlableLinks,true);
+
         //the unconnected link to this page. Add the links!
-        Collection<WikiPage> unconnected = null;
-        unconnected = pageRegLink.getAndUnlink();
+        Collection<WikiPage> unconnected = pageRegLink.getAndUnlink();
 
         if (unconnected != null) {
             for (WikiPage p : unconnected) {
@@ -208,8 +265,12 @@ public class Wikipedia {
             }
         }
 
-        return new UpdateStatus(unindexed,pageRegLink);
+        repository.createPages(unconnected);
+
+        return new UpdateStatus(unindexed,pageRegLink,true);
     }
+
+
 
     public void remove(WikiLink link) {
         linkService.deregister(link);
@@ -223,7 +284,7 @@ public class Wikipedia {
             return;
 
         page.setRemoved(true);
-        repository.savePage(page);
+        repository.savePage(page,false);
     }
 
     public WikiPage getPage(String title) {
@@ -255,6 +316,12 @@ public class Wikipedia {
         return repository.getAllPages();
     }
 
+    private Collection<WikiPage> getAll(Collection<WikiLink> links) {
+        Set<WikiPage> all = new HashSet<>(bulkCreate.getAll(links));
+        all.addAll(repository.getAll(links));
+        return all;
+    }
+
     public int size() {
         return repository.getAmountOfPages() + bulkCreate.getAmountOfPages();
     }
@@ -262,10 +329,12 @@ public class Wikipedia {
     public static class UpdateStatus {
         private final Collection<WikiLink> unindexed;
         private final CrawlableLink pageRegLink;
+        private boolean updateLinks;
 
-        public UpdateStatus(Collection<WikiLink> unindexed, CrawlableLink pageRegLink) {
+        public UpdateStatus(Collection<WikiLink> unindexed, CrawlableLink pageRegLink, boolean updateLinks) {
             this.unindexed = unindexed;
             this.pageRegLink = pageRegLink;
+            this.updateLinks = updateLinks;
         }
 
         public Collection<WikiLink> getUnindexed() {
@@ -275,5 +344,7 @@ public class Wikipedia {
         public CrawlableLink getPageRegLink() {
             return pageRegLink;
         }
+
+
     }
 }

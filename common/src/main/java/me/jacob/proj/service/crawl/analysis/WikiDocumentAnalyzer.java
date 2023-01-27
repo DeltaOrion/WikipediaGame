@@ -1,11 +1,17 @@
 package me.jacob.proj.service.crawl.analysis;
 
+import me.jacob.proj.model.PageRepository;
+import me.jacob.proj.model.map.HashMapLinkRepository;
+import me.jacob.proj.model.map.HashMapPageRepository;
+import me.jacob.proj.service.LinkService;
+import me.jacob.proj.service.Wikipedia;
 import me.jacob.proj.service.crawl.MalformedPageException;
 import me.jacob.proj.service.crawl.FetchResult;
 import me.jacob.proj.service.crawl.fetch.DocumentFetcher;
 import me.jacob.proj.service.crawl.fetch.WebDocumentFetcher;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
+import me.jacob.proj.util.AtomicIntCounter;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
@@ -19,6 +25,7 @@ import java.util.regex.Pattern;
 public class WikiDocumentAnalyzer extends AbstractDocumentAnalyzer {
 
     private WikiPage analyzed;
+    private final Wikipedia wikipedia;
 
     private final static String MAIN_CONTENT = "mw-content-text";
     private final static String LANG_ELE = "p-lang";
@@ -27,10 +34,17 @@ public class WikiDocumentAnalyzer extends AbstractDocumentAnalyzer {
 
     private final static Pattern COMMA_PATTERN = Pattern.compile(",\\s*");
 
+    public WikiDocumentAnalyzer(Wikipedia wikipedia) {
+        this.wikipedia = wikipedia;
+    }
+
     public static void main(String[] args) throws MalformedURLException, MalformedPageException {
         DocumentFetcher fetcher = new WebDocumentFetcher();
+        PageRepository pageRepo = new HashMapPageRepository(new AtomicIntCounter());
+        LinkService service = new LinkService(new HashMapLinkRepository(pageRepo), pageRepo);
+        Wikipedia wikipedia = new Wikipedia(service,pageRepo);
         FetchResult doc = fetcher.fetch(new WikiLink(new URL("https://en.wikipedia.org/wiki/UK_(disambiguation)")));
-        DocumentAnalyzer analyzer = new WikiDocumentAnalyzer();
+        DocumentAnalyzer analyzer = new WikiDocumentAnalyzer(wikipedia);
         analyzer.setDocument(doc);
         analyzer.analyze();
 
@@ -66,12 +80,13 @@ public class WikiDocumentAnalyzer extends AbstractDocumentAnalyzer {
         Element body = html.body();
         String title = getTitle(body);
 
-        WikiPage page = new WikiPage(title, getDocument().getWikiLink());
+        WikiPage page = wikipedia.newPage(title,getDocument().getWikiLink());
 
         page.setArticleType(getDocumentType(getDocument().getWikiLink(),html));
 
         Element langs = body.getElementById(LANG_ELE);
-        harvestLangs(page,langs);
+        if(langs!=null)
+            harvestLangs(page,langs);
 
         Element mainContent = body.getElementById(MAIN_CONTENT);
         if(mainContent==null)
@@ -102,7 +117,7 @@ public class WikiDocumentAnalyzer extends AbstractDocumentAnalyzer {
     }
 
     private void handleRedirect() throws MalformedPageException {
-        DocumentAnalyzer redirectAnalyzer = new RedirectDocumentAnalyzer();
+        DocumentAnalyzer redirectAnalyzer = new RedirectDocumentAnalyzer(wikipedia);
         redirectAnalyzer.setDocument(getDocument());
         redirectAnalyzer.analyze();
         analyzed = redirectAnalyzer.getPage();

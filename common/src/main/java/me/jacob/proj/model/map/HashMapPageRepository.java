@@ -1,11 +1,13 @@
 package me.jacob.proj.model.map;
 
+import me.jacob.proj.model.CrawlableLink;
 import me.jacob.proj.model.PageRepository;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.util.IDCounter;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
@@ -17,6 +19,9 @@ public class HashMapPageRepository implements PageRepository {
     private final Map<Integer, WikiPage> byId;
     private final ReadWriteLock lock;
     private final IDCounter idCounter;
+
+    private final Map<Integer,List<WikiPage>> neighbours = new HashMap<>();
+    private final Map<UUID,List<WikiPage>> unconnected = new ConcurrentHashMap<>();
 
     public HashMapPageRepository(IDCounter idCounter) {
         this.byLink = new HashMap<>();
@@ -67,6 +72,39 @@ public class HashMapPageRepository implements PageRepository {
     }
 
     @Override
+    public Collection<WikiPage> getAll(Collection<WikiLink> links) {
+        try {
+            lock.readLock().lock();
+            List<WikiPage> result = new ArrayList<>();
+            for (WikiLink link : links) {
+                WikiPage page = byLink.get(link);
+                if(page!=null)
+                    result.add(page);
+            }
+
+            return result;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    @Override
+    public Collection<WikiPage> getNeighbours(int id) {
+        try {
+            lock.readLock().lock();
+            List<WikiPage> n = this.neighbours.get(id);
+            if (n == null) {
+                n = new ArrayList<>();
+                neighbours.put(id, n);
+            }
+            return n;
+
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    @Override
     public void createPage(WikiPage page) {
         try {
             lock.writeLock().lock();
@@ -80,6 +118,7 @@ public class HashMapPageRepository implements PageRepository {
         byLink.put(page.getLink(), page);
         byName.put(page.getTitle(), page);
         byId.put(page.getUniqueId(), page);
+        neighbours.put(page.getUniqueId(),new ArrayList<>());
     }
 
     @Override
@@ -95,7 +134,7 @@ public class HashMapPageRepository implements PageRepository {
     }
 
     @Override
-    public void savePage(WikiPage page) {
+    public void savePage(WikiPage page, boolean updateLinks) {
 
     }
 
@@ -125,8 +164,41 @@ public class HashMapPageRepository implements PageRepository {
         return idCounter.nextUniqueId();
     }
 
-    private void clear() {
+    @Override
+    public void clearNeighbours(int uniqueId) {
+        try {
+            lock.writeLock().lock();
+            neighbours.remove(uniqueId);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
 
+    @Override
+    public synchronized Collection<WikiPage> getAndClearUnconnected(UUID uniqueId) {
+        List<WikiPage> unconnected = this.unconnected.remove(uniqueId);
+        if(unconnected==null)
+            return new ArrayList<>();
+
+        return unconnected;
+    }
+
+    @Override
+    public synchronized Collection<WikiPage> getUnconnected(UUID uniqueId) {
+        List<WikiPage> unconnected = this.unconnected.get(uniqueId);
+        if(unconnected==null)
+            return new ArrayList<>();
+
+        return unconnected;
+    }
+
+    @Override
+    public synchronized void saveUnconnected(Collection<CrawlableLink> links) {
+        for(CrawlableLink link : links) {
+            List<WikiPage> found = this.unconnected.computeIfAbsent(link.getUniqueId(), k -> new ArrayList<>());
+            found.clear();
+            found.addAll(link.getUnconnected());
+        }
     }
 
     public Set<WikiPage> clearAndDo(Consumer<Set<WikiPage>> action) {
@@ -138,6 +210,7 @@ public class HashMapPageRepository implements PageRepository {
             byName.clear();
             byLink.clear();
             byId.clear();
+            neighbours.clear();
             return existing;
         } finally {
             lock.writeLock().unlock();

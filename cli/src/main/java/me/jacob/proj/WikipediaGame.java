@@ -1,5 +1,6 @@
 package me.jacob.proj;
 
+import me.jacob.proj.model.PageRepository;
 import me.jacob.proj.model.map.HashMapLinkRepository;
 import me.jacob.proj.model.map.HashMapPageRepository;
 import me.jacob.proj.service.LinkService;
@@ -20,18 +21,17 @@ public class WikipediaGame {
     private LinkService linkService;
 
     public WikipediaGame() {
-        linkService = new LinkService(new HashMapLinkRepository(new AtomicIntCounter()), 100);
-        linkService.setTimeBetweenUpdates(Duration.of(30, ChronoUnit.SECONDS));
+        PageRepository repository = new HashMapPageRepository(new AtomicIntCounter());
         pageService = new Wikipedia(linkService, new HashMapPageRepository(new AtomicIntCounter()));
+        linkService = new LinkService(new HashMapLinkRepository(repository), repository);
+        linkService.setTimeBetweenUpdates(Duration.of(30, ChronoUnit.SECONDS));
 
         crawler = new WikiCrawler.Builder(pageService,linkService)
                 .setShutDownOnEarlyStop(true)
                 .setShutDownOnSize(false)
                 .setConsumers(1)
                 .setProducers(1)
-                .setCreatesUntilCalculation(10)
-                .setUpdatesUntilCalculation(10)
-                .setAnalyzer(new WikiAnalyzerFactory())
+                .setAnalyzer(new WikiAnalyzerFactory(pageService))
                 .setFetcher(new FileDocumentFetcher(new File("testpages").toPath()))
                 .build();
     }

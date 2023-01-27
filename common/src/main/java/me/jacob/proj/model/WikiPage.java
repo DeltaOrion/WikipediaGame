@@ -1,6 +1,8 @@
 package me.jacob.proj.model;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public class WikiPage {
 
@@ -9,20 +11,25 @@ public class WikiPage {
     private String title;
     private String description;
     private final WikiLink link;
-    private final List<WikiPage> neighbours;
+
+    private final PageRepository repository;
+    private final ConcurrentMap<WikiPage,Object> cachedNeighbours;
 
     private boolean isRedirect;
     private String articleType;
 
     private boolean isRemoved;
 
-    public WikiPage(String title, WikiLink link) {
+    public WikiPage(String title, WikiLink link, PageRepository repository) {
         this.link = link;
-        this.neighbours = new ArrayList<>();
+        this.repository = repository;
         this.title = title;
+        this.articleType = "";
+        this.description = "";
+        this.cachedNeighbours = new ConcurrentHashMap<>();
     }
 
-    public String getTitle() {
+    public synchronized String getTitle() {
         return title;
     }
 
@@ -30,12 +37,18 @@ public class WikiPage {
         return description;
     }
 
-    public synchronized List<WikiPage> getNeighbours() {
-        return Collections.unmodifiableList(neighbours);
+    public Collection<WikiPage> getNeighbours() {
+        Set<WikiPage> neighbours = new HashSet<>(repository.getNeighbours(this.uniqueId));
+        neighbours.addAll(cachedNeighbours.keySet());
+        return neighbours;
     }
 
-    public synchronized void addNeighbour(WikiPage neighbour) {
-        this.neighbours.add(neighbour);
+    public Collection<WikiPage> getCachedNeighbours() {
+        return Collections.unmodifiableCollection(cachedNeighbours.keySet());
+    }
+
+    public void addNeighbour(WikiPage neighbour) {
+        cachedNeighbours.put(neighbour,new Object());
     }
 
     public synchronized void setDescription(String description) {
@@ -46,11 +59,11 @@ public class WikiPage {
         return link;
     }
 
-    public int getUniqueId() {
+    public synchronized int getUniqueId() {
         return uniqueId;
     }
 
-    public void setUniqueId(int uniqueId) {
+    public synchronized void setUniqueId(int uniqueId) {
         this.uniqueId = uniqueId;
     }
 
@@ -61,31 +74,31 @@ public class WikiPage {
                 '}';
     }
 
-    public boolean isRedirect() {
+    public synchronized boolean isRedirect() {
         return isRedirect;
     }
 
-    public void setRedirect(boolean redirect) {
+    public synchronized void setRedirect(boolean redirect) {
         isRedirect = redirect;
     }
 
-    public String getArticleType() {
+    public synchronized String getArticleType() {
         return articleType;
     }
 
-    public void setArticleType(String articleType) {
+    public synchronized void setArticleType(String articleType) {
         this.articleType = articleType;
     }
 
-    public boolean isRemoved() {
+    public synchronized boolean isRemoved() {
         return isRemoved;
     }
 
-    public void setRemoved(boolean removed) {
+    public synchronized void setRemoved(boolean removed) {
         isRemoved = removed;
     }
 
-    public void setTitle(String title) {
+    public synchronized void setTitle(String title) {
         this.title = title;
     }
 
@@ -94,15 +107,20 @@ public class WikiPage {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         WikiPage wikiPage = (WikiPage) o;
-        return uniqueId == wikiPage.uniqueId && Objects.equals(description, wikiPage.description) && Objects.equals(link, wikiPage.link);
+        return uniqueId == wikiPage.uniqueId && Objects.equals(link, wikiPage.link);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(uniqueId, description, link);
+        return Objects.hash(uniqueId, link);
     }
 
-    public synchronized void clearNeighbours() {
-        this.neighbours.clear();
+    public void clearNeighbours() {
+        this.cachedNeighbours.clear();
+        repository.clearNeighbours(this.uniqueId);
+    }
+
+    public void clearCached() {
+        this.cachedNeighbours.clear();
     }
 }

@@ -1,12 +1,19 @@
 package me.jacob.proj.service.crawl.analysis.factory;
 
+import me.jacob.proj.service.Wikipedia;
 import me.jacob.proj.service.crawl.analysis.DocumentAnalyzer;
 import me.jacob.proj.service.crawl.analysis.WikiDocumentAnalyzer;
 
 public class WikiAnalyzerFactory implements AnalyzerFactory {
 
+    private final Wikipedia wikipedia;
+
+    public WikiAnalyzerFactory(Wikipedia wikipedia) {
+        this.wikipedia = wikipedia;
+    }
+
     @Override
     public DocumentAnalyzer get() {
-        return new WikiDocumentAnalyzer();
+        return new WikiDocumentAnalyzer(wikipedia);
     }
 }

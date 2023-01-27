@@ -18,6 +18,8 @@ public class WikiConsumer implements Runnable {
     //--- Stats Divider --/
     private int consumed = 0;
     private long totalStarvationTime = 0;
+    private long totalAnalysisTime = 0;
+    private long totalCreateTime = 0;
 
     public WikiConsumer(int id, Wikipedia wikipedia, WikiCrawler crawler, DocumentAnalyzer analyzer) {
         this.wikipedia = wikipedia;
@@ -56,7 +58,10 @@ public class WikiConsumer implements Runnable {
                 document = taken.getItem();
                 debug("Consuming "+ document.getWikiLink());
                 analyzer.setDocument(document);
+                beforeTimer = System.nanoTime();
                 analyzer.analyze();
+                afterTimer = System.nanoTime();
+                totalAnalysisTime += (afterTimer-beforeTimer);
                 WikiPage analyzed = analyzer.getPage();
                 if(analyzed==null)
                     throw new MalformedPageException();
@@ -65,6 +70,7 @@ public class WikiConsumer implements Runnable {
                 analyzed.setRemoved(false);
                 debug("Finished Consuming "+document.getWikiLink());
 
+                beforeTimer = System.nanoTime();
                 WikiPage wikiPage = wikipedia.getPage(document.getWikiLink());
                 if(wikiPage!=null) {
                     debug("Updating "+wikiPage.getTitle());
@@ -73,6 +79,8 @@ public class WikiConsumer implements Runnable {
                     debug("Creating "+analyzed.getTitle());
                     crawler.create(analyzed, analyzer.getLinks());
                 }
+                afterTimer = System.nanoTime();
+                totalCreateTime += (afterTimer-beforeTimer);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
@@ -83,10 +91,10 @@ public class WikiConsumer implements Runnable {
             } catch (Throwable e) {
                 //in this case an error occurred with the analyzer. Stash the link for further
                 //usage and log the error.
+                e.printStackTrace();
+
                 if(document!=null)
                     crawler.stash(document.getWikiLink());
-
-                e.printStackTrace();
             }
         }
     }
@@ -101,6 +109,14 @@ public class WikiConsumer implements Runnable {
 
     public synchronized long getTotalStarvationTime() {
         return totalStarvationTime;
+    }
+
+    public synchronized long getTotalAnalysisTime() {
+        return totalAnalysisTime;
+    }
+
+    public synchronized long getTotalCreateTime() {
+        return totalCreateTime;
     }
 
     public synchronized boolean isRunning() {

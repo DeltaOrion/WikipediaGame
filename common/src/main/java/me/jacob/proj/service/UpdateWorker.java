@@ -23,7 +23,8 @@ public class UpdateWorker implements Runnable {
     public void run() {
         debug("Starting");
         while(!Thread.currentThread().isInterrupted() && running) {
-            for(CrawlableLink link : service.getNextBlock()) {
+            long forUpdate = System.currentTimeMillis() - service.getTimeBetweenUpdates().toMillis();
+            for(CrawlableLink link : service.getBefore(forUpdate)) {
                 if(!running)
                     return;
 

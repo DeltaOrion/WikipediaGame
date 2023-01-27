@@ -31,11 +31,11 @@ public class CommandLineInterface {
 
         while (running) {
             String line = reader.readLine("> ");
-            execute(line);
+            executeCommand(line);
         }
     }
 
-    private void execute(String line) {
+    public void executeCommand(String line) {
         String[] args = split(line);
         if(args.length==0) {
             System.out.println("No Command Entered");

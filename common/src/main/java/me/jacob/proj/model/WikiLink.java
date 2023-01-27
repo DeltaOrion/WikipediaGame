@@ -20,6 +20,13 @@ public class WikiLink {
         this(page.getPath());
     }
 
+    public WikiLink(Map<Locale,String> authorities) {
+        if(!authorities.containsKey(Locale.ENGLISH))
+            throw new IllegalArgumentException("no english link");
+
+        this.paths = authorities;
+    }
+
     public WikiLink(String page) {
         this.paths = new HashMap<>();
         this.paths.put(Locale.ENGLISH,page);
@@ -79,5 +86,9 @@ public class WikiLink {
     @Override
     public int hashCode() {
         return Objects.hashCode(paths.get(Locale.ENGLISH));
+    }
+
+    public Map<Locale, String> getAuthorities() {
+        return Collections.unmodifiableMap(paths);
     }
 }

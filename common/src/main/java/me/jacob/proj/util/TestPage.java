@@ -1,5 +1,10 @@
 package me.jacob.proj.util;
 
+import me.jacob.proj.model.PageRepository;
+import me.jacob.proj.model.map.HashMapLinkRepository;
+import me.jacob.proj.model.map.HashMapPageRepository;
+import me.jacob.proj.service.LinkService;
+import me.jacob.proj.service.Wikipedia;
 import me.jacob.proj.service.crawl.FetchResult;
 import me.jacob.proj.service.crawl.MalformedPageException;
 import me.jacob.proj.service.crawl.analysis.TestAnalyzer;
@@ -21,19 +26,24 @@ import java.util.Set;
 public class TestPage {
 
     public static void main(String[] args) throws IOException {
-        TestPage testPage = TestPage.fromFile(new File("testpages").toPath().resolve("b").resolve("1.txt").toFile());
+        PageRepository pageRepo = new HashMapPageRepository(new AtomicIntCounter());
+        LinkService service = new LinkService(new HashMapLinkRepository(pageRepo), pageRepo);
+        Wikipedia wikipedia = new Wikipedia(service,pageRepo);
+        TestPage testPage = TestPage.fromFile(wikipedia,new File("testpages").toPath().resolve("b").resolve("1.txt").toFile());
         System.out.println(testPage.title);
         System.out.println(testPage.link);
         System.out.println(testPage.description);
         System.out.println(testPage.links);
     }
 
+    private final Wikipedia wikipedia;
     private final String link;
     private String title;
     private String description;
     private Set<String> links;
 
-    public TestPage(String link) {
+    public TestPage(Wikipedia wikipedia, String link) {
+        this.wikipedia = wikipedia;
         this.link = link;
         this.title = "";
         this.description = "";
@@ -73,7 +83,7 @@ public class TestPage {
     }
 
     public WikiPage toPage() {
-        WikiPage page = new WikiPage(title,new WikiLink("/wiki/"+link));
+        WikiPage page = wikipedia.newPage(title,new WikiLink("/wiki/"+link));
         page.setDescription(description);
         return page;
     }
@@ -115,7 +125,7 @@ public class TestPage {
         return file;
     }
 
-    public static TestPage fromFile(File file) throws IOException {
+    public static TestPage fromFile(Wikipedia wikipedia ,File file) throws IOException {
         if(!file.exists())
             throw new IOException("File does not exist");
 
@@ -126,12 +136,12 @@ public class TestPage {
         WikiLink wikiLink = new WikiLink("/wiki/"+name);
         FetchResult result = new FetchResult(wikiLink,document);
 
-        TestAnalyzer analyzer = new TestAnalyzer();
+        TestAnalyzer analyzer = new TestAnalyzer(wikipedia);
         analyzer.setDocument(result);
         try {
             analyzer.analyze();
             WikiPage page = analyzer.getPage();
-            TestPage testPage = new TestPage(name);
+            TestPage testPage = new TestPage(wikipedia, name);
             testPage.setTitle(page.getTitle());
             testPage.setDescription(page.getDescription());
             for(WikiLink link : analyzer.getLinks()) {

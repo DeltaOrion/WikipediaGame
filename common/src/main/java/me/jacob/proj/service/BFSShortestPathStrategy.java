@@ -13,6 +13,16 @@ public class BFSShortestPathStrategy implements ShortestPathStrategy {
          *   - Cache results and evict on update.
          */
 
+        List<List<WikiPage>> result = new ArrayList<>();
+
+        //deal with edge case when we are travelling to and from the same node
+        if(start.equals(end)) {
+            List<WikiPage> path = new ArrayList<>();
+            path.add(end);
+            result.add(path);
+            return result;
+        }
+
         //init BFS, layer order traversal
         Queue<Node> queue = new ArrayDeque<>();
         Node startNode = new Node(start,true);
@@ -59,7 +69,6 @@ public class BFSShortestPathStrategy implements ShortestPathStrategy {
             return new ArrayList<>();
 
         //use backtracking to convert the node into usable shortest paths!
-        List<List<WikiPage>> result = new ArrayList<>();
         convertToPaths(finalNode,result,new ArrayList<>());
 
         return result;

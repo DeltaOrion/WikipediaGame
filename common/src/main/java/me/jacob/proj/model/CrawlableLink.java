@@ -4,21 +4,23 @@ import java.util.*;
 
 public class CrawlableLink {
 
-    private final int uniqueId;
-    private Set<WikiPage> unconnectedEdges;
+    private final UUID uniqueId;
+    private Set<WikiPage> cachedUnconnected;
+    private final PageRepository pageRepository;
     private final WikiLink link;
     private boolean processed;
     private boolean registered;
     private boolean pageFound;
     private long lastProcessed;
 
-    public CrawlableLink(WikiLink link, int uniqueId) {
+    public CrawlableLink(WikiLink link, UUID uniqueId, PageRepository pageRepository) {
         this.link = link;
+        this.pageRepository = pageRepository;
         this.processed = false;
         this.registered = false;
         this.pageFound = false;
         this.lastProcessed = -1;
-        this.unconnectedEdges = new HashSet<>();
+        this.cachedUnconnected = new HashSet<>();
         this.uniqueId = uniqueId;
     }
 
@@ -30,7 +32,11 @@ public class CrawlableLink {
         return processed;
     }
 
-    public synchronized void setProcessed(boolean pageFound) {
+    public synchronized void setProcessed(boolean processed) {
+        this.processed = processed;
+    }
+
+    public synchronized void toggleProcessed(boolean pageFound) {
         this.processed = true;
         this.registered = false;
         this.pageFound = pageFound;
@@ -42,40 +48,47 @@ public class CrawlableLink {
     }
 
     public synchronized void addUnconnected(WikiPage page) {
-        unconnectedEdges.add(page);
+        cachedUnconnected.add(page);
     }
 
     public synchronized void unlink() {
-        unconnectedEdges = new HashSet<>();
+        cachedUnconnected = new HashSet<>();
     }
 
     public synchronized Collection<WikiPage> getAndUnlink() {
-        List<WikiPage> pages = new ArrayList<>(unconnectedEdges);
-        unconnectedEdges.clear();
+        List<WikiPage> pages = new ArrayList<>(cachedUnconnected);
+        cachedUnconnected.clear();
+        pages.addAll(pageRepository.getAndClearUnconnected(this.uniqueId));
         return pages;
     }
 
     public synchronized Collection<WikiPage> getUnconnected() {
-        return Collections.unmodifiableSet(unconnectedEdges);
+        Set<WikiPage> neighbours = new HashSet<>(pageRepository.getUnconnected(this.uniqueId));
+        neighbours.addAll(cachedUnconnected);
+        return neighbours;
     }
 
-    public boolean isRegistered() {
+    public synchronized Collection<WikiPage> getCachedUnconnected() {
+        return cachedUnconnected;
+    }
+
+    public synchronized boolean isRegistered() {
         return registered;
     }
 
-    public void setRegistered(boolean registered) {
+    public synchronized void setRegistered(boolean registered) {
         this.registered = registered;
     }
 
-    public boolean isPageFound() {
+    public synchronized boolean isPageFound() {
         return pageFound;
     }
 
-    public void setPageFound(boolean pageFound) {
+    public synchronized void setPageFound(boolean pageFound) {
         this.pageFound = pageFound;
     }
 
-    public int getUniqueId() {
+    public UUID getUniqueId() {
         return uniqueId;
     }
 
@@ -86,5 +99,22 @@ public class CrawlableLink {
                 ", link=" + link +
                 ", processed=" + processed +
                 '}';
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        CrawlableLink link = (CrawlableLink) o;
+        return uniqueId.equals(link.uniqueId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(uniqueId);
+    }
+
+    public synchronized void setLastProcessed(long lastProcessed) {
+        this.lastProcessed = lastProcessed;
     }
 }

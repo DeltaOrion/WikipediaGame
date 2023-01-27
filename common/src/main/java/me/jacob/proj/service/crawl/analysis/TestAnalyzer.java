@@ -1,5 +1,6 @@
 package me.jacob.proj.service.crawl.analysis;
 
+import me.jacob.proj.service.Wikipedia;
 import me.jacob.proj.service.crawl.MalformedPageException;
 import me.jacob.proj.service.crawl.FetchResult;
 import me.jacob.proj.model.WikiLink;
@@ -14,9 +15,14 @@ import java.util.Set;
 
 public class TestAnalyzer implements DocumentAnalyzer {
 
+    private final Wikipedia wikipedia;
     private FetchResult document;
     private Set<WikiLink> linksFound = new HashSet<>();
     private WikiPage analyzed = null;
+
+    public TestAnalyzer(Wikipedia wikipedia) {
+        this.wikipedia = wikipedia;
+    }
 
     @Override
     public void setDocument(FetchResult document) {
@@ -40,7 +46,7 @@ public class TestAnalyzer implements DocumentAnalyzer {
             linksFound.add(new WikiLink("/wiki/"+link.html()));
         }
 
-        analyzed = new WikiPage(title, document.getWikiLink());
+        analyzed = wikipedia.newPage(title, document.getWikiLink());
         Element description = body.getElementById("description");
         if(description!=null)
             analyzed.setDescription(description.text());

@@ -1,10 +1,13 @@
 package me.jacob.proj.service.crawl;
 
 import me.jacob.proj.model.CrawlableLink;
+import me.jacob.proj.model.PageRepository;
 import me.jacob.proj.model.WikiLink;
 import me.jacob.proj.model.WikiPage;
 import me.jacob.proj.model.map.HashMapLinkRepository;
 import me.jacob.proj.model.map.HashMapPageRepository;
+import me.jacob.proj.model.neo4j.Neo4jLinkRepository;
+import me.jacob.proj.model.neo4j.Neo4jPageRepository;
 import me.jacob.proj.service.LinkService;
 import me.jacob.proj.service.UpdateWorker;
 import me.jacob.proj.service.Wikipedia;
@@ -18,6 +21,9 @@ import me.jacob.proj.service.crawl.fetch.WebDocumentFetcher;
 import me.jacob.proj.util.AtomicIntCounter;
 import me.jacob.proj.util.Poisonable;
 import me.jacob.proj.util.TestPage;
+import org.neo4j.driver.AuthTokens;
+import org.neo4j.driver.Driver;
+import org.neo4j.driver.GraphDatabase;
 
 import java.io.File;
 import java.io.IOException;
@@ -27,7 +33,6 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.logging.Logger;
 
 public class WikiCrawler {
 
@@ -67,20 +72,25 @@ public class WikiCrawler {
     private final DocumentFetcher fetcher;
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        fileTest();
+        //performanceTest();
+        neo4jTest();
+        //fileTest();
     }
 
     private static void performanceTest() throws MalformedURLException, InterruptedException {
-        LinkService repository = new LinkService(new HashMapLinkRepository(new AtomicIntCounter()), 100);
-        Wikipedia wikipedia = new Wikipedia(repository, new HashMapPageRepository(new AtomicIntCounter()));
+        Driver driver = GraphDatabase.driver("bolt://localhost:7687", AuthTokens.basic("neo4j","password"));
+        Neo4jPageRepository pageRepo = new Neo4jPageRepository(driver);
+        Neo4jLinkRepository linkRepository = new Neo4jLinkRepository(driver,pageRepo);
+        LinkService repository = new LinkService(linkRepository,pageRepo);
+        Wikipedia wikipedia = new Wikipedia(repository,pageRepo);
 
         WikiCrawler crawler = new WikiCrawler.Builder(wikipedia, repository)
                 .setShutDownOnEarlyStop(true)
                 .setShutDownOnSize(true)
                 .setEarlyStop(1000)
-                .setConsumers(1)
-                .setProducers(60)
-                .setAnalyzer(new WikiAnalyzerFactory())
+                .setConsumers(15)
+                .setProducers(10)
+                .setAnalyzer(new WikiAnalyzerFactory(wikipedia))
                 .setFetcher(new WebDocumentFetcher())
                 .build();
 
@@ -138,31 +148,79 @@ public class WikiCrawler {
         System.out.println("Total Time Elapsed: " + (after - before));
     }
 
-    private static void fileTest() throws MalformedURLException, InterruptedException {
-        LinkService repository = new LinkService(new HashMapLinkRepository(new AtomicIntCounter()), 100);
+    private static void neo4jTest() throws IOException, InterruptedException {
+        Driver driver = GraphDatabase.driver("bolt://localhost:7687", AuthTokens.basic("neo4j","password"));
+        Neo4jPageRepository pageRepo = new Neo4jPageRepository(driver);
+
+        LinkService repository = new LinkService(new Neo4jLinkRepository(driver,pageRepo), pageRepo);
         repository.setTimeBetweenUpdates(Duration.of(30, ChronoUnit.SECONDS));
-        Wikipedia wikipedia = new Wikipedia(repository, new HashMapPageRepository(new AtomicIntCounter()));
+        Wikipedia wikipedia = new Wikipedia(repository, pageRepo);
+
+        TestDocumentFetcher testDocumentFetcher = new TestDocumentFetcher();
+
+        /*
+        for(File file : new File("testpages").toPath().resolve("b").toFile().listFiles())
+            testDocumentFetcher.addPage(TestPage.fromFile(wikipedia,file));
+         */
 
         WikiCrawler crawler = new WikiCrawler.Builder(wikipedia, repository)
                 .setShutDownOnEarlyStop(true)
-                .setShutDownOnSize(false)
-                .setConsumers(1)
+                .setShutDownOnSize(true)
+                .setConsumers(3)
                 .setProducers(1)
-                .setAnalyzer(new WikiAnalyzerFactory())
+                .setAnalyzer(new WikiAnalyzerFactory(wikipedia))
                 .setFetcher(new FileDocumentFetcher(new File("testpages").toPath()))
                 .build();
 
+        long start = System.currentTimeMillis();
+        crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Black_hole")));
+        //crawler.start(new WikiLink("/wiki/1"));
+        crawler.await();
+
+        long end = System.currentTimeMillis();
+        verbose(wikipedia);
+        System.out.println("Total Elapsed Time "+(end-start));
+        for(WikiConsumer consumer : crawler.getConsumers()) {
+            System.out.println("Analysis:" + consumer.getTotalAnalysisTime());
+            System.out.println("Starvation:" + consumer.getTotalStarvationTime());
+            System.out.println("Creation: "+consumer.getTotalCreateTime());
+        }
+
+        for(WikiProducer producer : crawler.producers) {
+            System.out.println("Producer Starve: "+producer.getTotalStarvationTime());
+        }
+    }
+
+    private static void fileTest() throws MalformedURLException, InterruptedException {
+        PageRepository pageRepo = new HashMapPageRepository(new AtomicIntCounter());
+        LinkService repository = new LinkService(new HashMapLinkRepository(pageRepo), pageRepo);
+        repository.setTimeBetweenUpdates(Duration.of(30, ChronoUnit.SECONDS));
+        Wikipedia wikipedia = new Wikipedia(repository, pageRepo);
+
+        WikiCrawler crawler = new WikiCrawler.Builder(wikipedia, repository)
+                .setShutDownOnEarlyStop(true)
+                .setShutDownOnSize(true)
+                .setConsumers(1)
+                .setProducers(1)
+                .setAnalyzer(new WikiAnalyzerFactory(wikipedia))
+                .setFetcher(new FileDocumentFetcher(new File("testpages").toPath()))
+                .build();
+
+        long start = System.currentTimeMillis();
         crawler.start(new WikiLink(new URL("https://en.wikipedia.org/wiki/Black_hole")));
         crawler.await();
+        long end = System.currentTimeMillis();
         verbose(wikipedia);
+        System.out.println("Total Elapsed Time "+(end-start));
     }
 
     private static void updateTest() throws IOException, InterruptedException {
-        LinkService repository = new LinkService(new HashMapLinkRepository(new AtomicIntCounter()), 3);
-        Wikipedia wikipedia = new Wikipedia(repository, new HashMapPageRepository(new AtomicIntCounter()));
+        PageRepository pageRepo =  new HashMapPageRepository(new AtomicIntCounter());
+        LinkService repository = new LinkService(new HashMapLinkRepository(pageRepo), pageRepo);
+        Wikipedia wikipedia = new Wikipedia(repository,pageRepo);
         repository.setTimeBetweenUpdates(Duration.ZERO);
 
-        TestDocumentFetcher fetcher = getTest1();
+        TestDocumentFetcher fetcher = getTest1(wikipedia);
         TestPage five = fetcher.getPage("5");
         five.addLink("8");
 
@@ -171,7 +229,7 @@ public class WikiCrawler {
                 .setShutDownOnSize(true)
                 .setConsumers(1)
                 .setProducers(1)
-                .setAnalyzer(new TestAnalyzerFactory())
+                .setAnalyzer(new TestAnalyzerFactory(wikipedia))
                 .setFetcher(fetcher)
                 .setCreatesUntilBulkPublish(3)
                 .build();
@@ -186,7 +244,7 @@ public class WikiCrawler {
         page.removeLink("3");
         page.addLink("8");
 
-        TestPage eight = new TestPage("8");
+        TestPage eight = new TestPage(wikipedia, "8");
         eight.setTitle("8");
         eight.setDescription("eight");
         eight.addLink("9");
@@ -206,7 +264,7 @@ public class WikiCrawler {
                 .setShutDownOnSize(true)
                 .setConsumers(1)
                 .setProducers(1)
-                .setAnalyzer(new TestAnalyzerFactory())
+                .setAnalyzer(new TestAnalyzerFactory(wikipedia))
                 .setFetcher(fetcher)
                 .build();
 
@@ -223,12 +281,12 @@ public class WikiCrawler {
         System.out.println("----------------");
     }
 
-    private static TestDocumentFetcher getTest1() throws IOException {
+    private static TestDocumentFetcher getTest1(Wikipedia wikipedia) throws IOException {
         TestDocumentFetcher fetcher = new TestDocumentFetcher();
         File directory = new File("testpages").toPath().resolve("b").toFile();
         for (File file : directory.listFiles()) {
             if (file.getName().endsWith(".txt")) {
-                fetcher.addPage(TestPage.fromFile(file));
+                fetcher.addPage(TestPage.fromFile(wikipedia,file));
             }
         }
 
@@ -315,9 +373,10 @@ public class WikiCrawler {
         switch (document.getStatus()) {
             case SUCCESS -> {
                 debug("Fetched " + document.getWikiLink().getLink());
-                fetched.add(Poisonable.item(document));
+                fetched.put(Poisonable.item(document));
             }
             case DOES_NOT_EXIST -> {
+                //debug("Does not exist "+document.getWikiLink().getLink());
                 unlink(link);
             }
             case CONNECTION_ERROR -> {
@@ -408,8 +467,10 @@ public class WikiCrawler {
         for (int i = 0; i < noOfProducers; i++)
             urls.push(Poisonable.poison());
 
-        for (int i = 0; i < noOfUpdaters; i++) {
-            updaters.get(i).stop();
+        if(releasedUpdaters) {
+            for (int i = 0; i < noOfUpdaters; i++) {
+                updaters.get(i).stop();
+            }
         }
     }
 
@@ -431,7 +492,7 @@ public class WikiCrawler {
     }
 
     public void create(WikiPage page, Collection<WikiLink> links) throws InterruptedException {
-        addLinks(wikipedia.bulkCreate(page, links));
+        addLinks(wikipedia.create(page, links)); //very very slow
         boolean publishUpdate = false;
         synchronized (this) {
             createsSinceLastPublish++;
@@ -445,8 +506,8 @@ public class WikiCrawler {
             incrementPages();
         }
 
-        if (publishUpdate)
-            wikipedia.publishBulkCreate();
+        //if (publishUpdate)
+        //    wikipedia.publishBulkCreate();
     }
 
 
@@ -465,7 +526,7 @@ public class WikiCrawler {
             addLink(link);
         }
 
-        linkService.update(registeredLinks);
+        linkService.update(registeredLinks,false);
     }
 
     //adds an indexed link
@@ -543,7 +604,7 @@ public class WikiCrawler {
             this.createsUntilBulkPublish = 1000;
 
             this.fetcher = new WebDocumentFetcher();
-            this.analyzer = new WikiAnalyzerFactory();
+            this.analyzer = new WikiAnalyzerFactory(wikipedia);
         }
 
         public Wikipedia getWikipedia() {
