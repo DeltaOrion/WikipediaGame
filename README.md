@@ -8,7 +8,7 @@ The program works by crawling wikipedia and fetching pages. It then grabs the li
 
 The project and its dependencies are built and managed by maven.
 
-```java
+```sh
 mvn clean install
 ```
 
@@ -16,7 +16,7 @@ mvn clean install
 
 One can run the project by using `java` command on the built output. The output should be located in the `target` folder. One can then interact with the program using the command line.
 
-```
+```sh
 java -jar <out>.jar
 ```
 
